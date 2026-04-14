@@ -1,0 +1,11 @@
+{
+  "appId": "com.jobgenie.worker",
+  "appName": "JobGenie",
+  "webDir": "dist",
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": ["google.com", "phone"]
+    }
+  }
+}

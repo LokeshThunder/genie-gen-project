@@ -1,0 +1,11 @@
+{
+  "auth": {
+    "providers": {
+      "emailPassword": false,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Job Genie",
+        "supportEmail": "support@jobgenie.com"
+      }
+    }
+  }
+}
