@@ -4,7 +4,6 @@ const NavBar = ({ active, setActive, isAdmin }) => {
   const navItems = isAdmin 
     ? [
         { label: "Home", icon: "🏠" },
-        { label: "Live", icon: "🛰️" },
         { label: "Genie Ops", icon: "✨" },
         { label: "Reports", icon: "📊" },
         { label: "Profile", icon: "👤" }
@@ -28,49 +27,48 @@ const NavBar = ({ active, setActive, isAdmin }) => {
       WebkitBackdropFilter: "blur(20px)",
       boxShadow: "0 10px 35px rgba(91, 63, 200, 0.2)", 
       border: "1px solid rgba(255, 255, 255, 0.5)",
-      padding: "10px 12px", 
+      padding: "10px 8px", 
       display: "flex", 
-      justifyContent: "space-between", 
+      justifyContent: "space-around", 
       alignItems: "center",
       zIndex: 1000,
     }}>
-      {navItems.map(({ icon, label }) => (
-        <div 
-          key={label} 
-          onClick={() => setActive(label)}
-          className="tap-effect"
-          style={active === label
-            ? { 
-                background: "#5B3FC8", 
-                borderRadius: 20, 
-                padding: "10px 18px", 
-                color: "#fff", 
-                fontSize: 11, 
-                fontWeight: 800, 
-                display: "flex", 
-                alignItems: "center", 
-                gap: 8, 
-                cursor: "pointer", 
-                transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                boxShadow: "0 4px 12px rgba(91, 63, 200, 0.3)"
-              }
-            : { 
-                padding: "10px 18px", 
-                color: "#94A3B8", 
-                display: "flex", 
-                alignItems: "center", 
-                cursor: "pointer", 
-                fontSize: 20, 
-                transition: "all 0.3s ease",
-                opacity: 0.8
-              }}
-        >
-          <span style={{ fontSize: active === label ? 14 : 20 }}>{icon}</span>
-          {active === label && (
-             <span style={{ fontSize: 11, letterSpacing: 0.3 }}>{label}</span>
-          )}
-        </div>
-      ))}
+      {navItems.map(({ icon, label }) => {
+        const isActive = active === label;
+        return (
+          <div 
+            key={label} 
+            onClick={() => setActive(label)}
+            className="tap-effect"
+            style={{ 
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 4,
+              padding: "8px 4px",
+              borderRadius: 16,
+              background: isActive ? "#5B3FC8" : "transparent",
+              cursor: "pointer",
+              transition: "background 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease",
+              boxShadow: isActive ? "0 4px 12px rgba(91, 63, 200, 0.3)" : "none",
+            }}
+          >
+            <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
+            <span style={{ 
+              fontSize: 9, 
+              fontWeight: isActive ? 800 : 600, 
+              color: isActive ? "#fff" : "#94A3B8",
+              letterSpacing: 0.3,
+              lineHeight: 1,
+              whiteSpace: "nowrap",
+            }}>
+              {label.toUpperCase()}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 };

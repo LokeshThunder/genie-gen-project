@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 const STEPS = ['Details', 'Eligibility', 'KYC', 'Done'];
 
@@ -112,6 +112,7 @@ const LoansScreen = ({ setActive }) => {
   const [uploads, setUploads] = useState({ aadhaar: false, pan: false, photo: false });
   const [applying, setApplying] = useState(false);
   const [loanAmount, setLoanAmount] = useState(5000);
+  const applicationId = useMemo(() => '#GGL-' + Math.floor(10000 + Math.random() * 90000), []);
 
   const handleCheckEligibility = () => {
     setCheckingEligibility(true);
@@ -329,7 +330,7 @@ const LoansScreen = ({ setActive }) => {
 
             <div style={{ width: '100%', background: 'rgba(212,175,55,0.07)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: 18, padding: '20px', marginBottom: 24 }}>
               {[
-                { icon: '🆔', label: 'Application ID', value: '#GGL-' + Math.floor(10000 + Math.random() * 90000) },
+                { icon: '🆔', label: 'Application ID', value: applicationId },
                 { icon: '💰', label: 'Requested Amount', value: formatAmount(loanAmount) },
                 { icon: '⏱️', label: 'Decision Timeline', value: '24-48 hours' },
                 { icon: '📱', label: 'Notification', value: 'SMS + In-app alert' },

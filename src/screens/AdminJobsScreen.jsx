@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import NavBar from '../components/NavBar';
+import { FirestoreService } from '../services/firestoreService';
 
-const AdminJobsScreen = ({ setActive, adminJobs = [], onEditJob, onCreateJob }) => {
+const AdminJobsScreen = ({ setActive, onEditJob, onCreateJob, jobs = [] }) => {
   const [tab, setTab] = useState('live'); // 'live' or 'draft'
 
-  const liveJobs = adminJobs.filter(j => j.status === 'live');
-  const draftJobs = adminJobs.filter(j => j.status === 'draft');
+  const liveJobs = (jobs || []).filter(j => j.status === 'live');
+  const draftJobs = (jobs || []).filter(j => j.status === 'draft');
 
   const displayJobs = tab === 'live' ? liveJobs : draftJobs;
 
@@ -242,7 +243,7 @@ const AdminJobsScreen = ({ setActive, adminJobs = [], onEditJob, onCreateJob }) 
         +
       </motion.button>
 
-      <NavBar active="Jobs" setActive={setActive} isAdmin={true} />
+      <NavBar active="Home" setActive={setActive} isAdmin={true} />
     </div>
   );
 };

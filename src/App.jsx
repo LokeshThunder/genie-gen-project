@@ -16,39 +16,108 @@ import TasksScreen from './screens/TasksScreen';
 import EarningsScreen from './screens/EarningsScreen';
 import JobDetailsScreen from './screens/JobDetailsScreen';
 import CreateJobScreen from './screens/CreateJobScreen';
-import Hyperspeed from './components/Hyperspeed';
 import TrackingScreen from './screens/TrackingScreen';
+import { aiService } from './services/aiService';
+import { FirestoreService } from './services/firestoreService';
+import { JobService } from './services/jobService';
 import ReportsScreen from './screens/ReportsScreen';
 import WorkerApplicationsScreen from './screens/WorkerApplicationsScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import SafetyScreen from './screens/SafetyScreen';
+import AdminJobsScreen from './screens/AdminJobsScreen';
 import EarningsPlannerScreen from './screens/EarningsPlannerScreen';
 import LiquidEther from './components/LiquidEther/LiquidEther';
 import GenieActionBar from './components/GenieActionBar';
 import { calculateLevel } from './constants/gamification';
 import GenieVoiceAssistant from './components/GenieVoiceAssistant';
+import AIChatbot from './components/AIChatbot';
 
 function App() {
-  const [showSplash, setShowSplash] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState('worker');
   const [activeTab, setActiveTab] = useState("Home");
   const [user, setUser] = useState(null);
   const [editJob, setEditJob] = useState(null);
   const [userProfile, setUserProfile] = useState(() => {
-    const saved = localStorage.getItem('jobGenie_profile');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('jobGenie_profile');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.error("Error parsing user profile:", e);
+      return null;
+    }
   });
   const [isSafetyModeActive, setIsSafetyModeActive] = useState(false);
   const [earningsGoal, setEarningsGoal] = useState(15000);
-  const [userXP, setUserXP] = useState(() => Number(localStorage.getItem('jobGenie_xp')) || 0);
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('jobGenie_theme') === 'dark');
+  const [userXP, setUserXP] = useState(() => {
+    try {
+      return Number(localStorage.getItem('jobGenie_xp')) || 0;
+    } catch (e) {
+      return 0;
+    }
+  });
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    try {
+      return localStorage.getItem('jobGenie_theme') === 'dark';
+    } catch (e) {
+      return false;
+    }
+  });
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [activeSuggestions, setActiveSuggestions] = useState([]);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
-  const [searchParams, setSearchParams] = useState(null);
+  const [screenParams, setScreenParams] = useState({});
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  const [adminJobs, setAdminJobs] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !user) return;
+
+    const unsubJobs = FirestoreService.streamJobs(setAdminJobs);
+    const unsubApps = FirestoreService.streamApplications(setApplications);
+    const unsubAttendance = FirestoreService.streamAttendance(setAttendance);
+    
+    // Sync Profile & XP from Firestore
+    const unsubProfile = FirestoreService.getUserProfile(user.uid).then(data => {
+      if (data) {
+        setUserProfile(data);
+        setUserXP(data.xp || 0);
+      }
+    });
+
+    return () => {
+      unsubJobs();
+      unsubApps();
+      unsubAttendance();
+    };
+  }, [isLoggedIn, user]);
+
+  // Background Sync Engine
+  useEffect(() => {
+    const handleStatusChange = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', handleStatusChange);
+    window.addEventListener('offline', handleStatusChange);
+
+    if (isOnline && isLoggedIn && user) {
+      JobService.processSync(user.uid);
+    }
+
+    return () => {
+      window.removeEventListener('online', handleStatusChange);
+      window.removeEventListener('offline', handleStatusChange);
+    };
+  }, [isOnline, isLoggedIn, user]);
 
   const userLevel = calculateLevel(userXP);
+
+  // Helper to handle navigation with params
+  const navigateTo = (screen, params = {}) => {
+    setScreenParams(params);
+    setActiveTab(screen);
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -59,10 +128,11 @@ function App() {
         setUser(null);
         setIsLoggedIn(false);
       }
-      // Hide splash after auth state is determined + extra delay for effect
-      setTimeout(() => setShowSplash(false), 2000);
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -74,25 +144,16 @@ function App() {
     document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
-  // Handle Contextual Suggestions
+  // Contextual suggestions disabled by user request for a cleaner UI
   useEffect(() => {
-    if (!isLoggedIn) return;
-    
-    let suggestions = [];
-    if (userRole === 'admin') {
-      if (activeTab === 'Home') suggestions = [{ id: 'admin_insight', text: 'Worker demand peaking in Chennai South', actionLabel: 'REVIEW', target: 'Reports' }];
-    } else {
-      if (activeTab === 'Home') suggestions = [{ id: 'worker_find', text: '3 new high-pay gigs found nearby', actionLabel: 'FIND', target: 'Find Job' }];
-      if (activeTab === 'Earnings') suggestions = [{ id: 'earnings_plan', text: 'You are ₹2k away from your weekly goal', actionLabel: 'PLAN', target: 'Earnings Planner' }];
-    }
-    setActiveSuggestions(suggestions);
-  }, [activeTab, isLoggedIn, userRole]);
+    setActiveSuggestions([]);
+  }, [activeTab, isLoggedIn]);
 
   const handleLogin = (role, firebaseUser) => {
     setUserRole(role);
     setUser(firebaseUser);
     setIsLoggedIn(true);
-    setActiveTab("Home");
+    navigateTo("Home");
   };
 
   const handleLogout = async () => {
@@ -104,54 +165,37 @@ function App() {
     setIsLoggedIn(false);
     setUser(null);
     setUserRole('worker');
-    setActiveTab('Home');
+    navigateTo('Home');
   };
 
   const startCreate = () => {
     setEditJob(null);
-    setActiveTab("Create");
+    navigateTo("Create");
   };
 
   const startEdit = (job) => {
     setEditJob(job);
-    setActiveTab("Create");
+    navigateTo("Create");
   };
 
   const handleOnboardingComplete = (data) => {
+    if (data?.role === 'admin') setUserRole('admin');
     setUserProfile(data);
     localStorage.setItem('jobGenie_profile', JSON.stringify(data));
-    setActiveTab("Home");
+    navigateTo("Home");
   };
 
   // Simple routing logic based on state
   const renderScreen = () => {
-    if (showSplash) {
-      return (
-        <div style={{ height: '100%', position: 'relative', overflow: 'hidden', background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }}>
-             <Hyperspeed />
-          </div>
-          <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div className="fade-in" style={{ fontSize: 60, marginBottom: 20, animation: 'bounce 2s infinite' }}>🧞</div>
-            <div className="fade-in" style={{ fontSize: 32, fontWeight: 800, letterSpacing: -1 }}>Job Genie</div>
-            <div className="fade-in" style={{ fontSize: 13, opacity: 0.7, marginTop: 8, fontWeight: 600 }}>Find Work. Track Work. Grow.</div>
-          </div>
-          
-          <style>{`
-            @keyframes bounce {
-              0%, 100% { transform: translateY(0); }
-              50% { transform: translateY(-20px); }
-            }
-          `}</style>
-        </div>
-      );
-    }
-
     if (!isLoggedIn) {
       return (
-        <div style={{ height: '100%', position: 'relative' }}>
-          <LiquidEther autoIntensity={1.5} colors={["#5B3FC8", "#9396FF", "#1F1B3D"]} />
-          <LoginScreen onLogin={handleLogin} />
+        <div style={{ height: '100%', background: '#fff', display: 'flex', flexDirection: 'column', padding: 0, position: 'relative' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }}>
+            <LiquidEther autoIntensity={1.5} colors={["#5B3FC8", "#9396FF", "#1F1B3D"]} />
+          </div>
+          <div style={{ position: 'relative', zIndex: 1, height: '100%' }}>
+            <LoginScreen onLogin={handleLogin} />
+          </div>
         </div>
       );
     }
@@ -160,24 +204,22 @@ function App() {
     if (userRole === 'admin') {
       switch (activeTab) {
         case "Home":
-          return <AdminDashboard setActive={setActiveTab} onEditJob={startEdit} onCreateJob={startCreate} />;
+          return <AdminDashboard setActive={navigateTo} onEditJob={startEdit} onCreateJob={startCreate} jobs={adminJobs} applications={applications} />;
         case "Create":
-          return <CreateJobScreen setActive={setActiveTab} editData={editJob} />;
-        case "Live":
-          return <TrackingScreen setActive={setActiveTab} />;
-        case "Applications":
-          return <WorkerApplicationsScreen setActive={setActiveTab} />;
+          return <CreateJobScreen setActive={navigateTo} editData={editJob} user={user} />;
+        case "Jobs":
+        case "Campaigns":
+          return <AdminJobsScreen setActive={navigateTo} onEditJob={startEdit} onCreateJob={startCreate} jobs={adminJobs} />;
         case "Reports":
-          return <ReportsScreen setActive={setActiveTab} />;
+          return <ReportsScreen setActive={navigateTo} isAdmin={true} jobs={adminJobs} applications={applications} attendance={attendance} />;
         case "Genie Ops":
-          return <ChatScreen setActive={setActiveTab} isAdmin={true} onNavigate={(screen, params) => {
-            setSearchParams(params);
-            setActiveTab(screen);
+          return <ChatScreen setActive={navigateTo} isAdmin={true} onNavigate={(screen, params) => {
+            navigateTo(screen, params);
           }} />;
         case "Profile":
-          return <ProfileScreen setActive={setActiveTab} onLogout={handleLogout} isAdmin={userRole === 'admin'} />;
+          return <ProfileScreen setActive={navigateTo} onLogout={handleLogout} isAdmin={true} jobsCount={adminJobs.length} applicationsCount={applications.length} isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />;
         default:
-          return <AdminDashboard setActive={setActiveTab} onEditJob={startEdit} onCreateJob={startCreate} />;
+          return <AdminDashboard setActive={navigateTo} onEditJob={startEdit} onCreateJob={startCreate} jobs={adminJobs} applications={applications} />;
       }
     }
 
@@ -188,38 +230,46 @@ function App() {
 
     switch (activeTab) {
       case "Home":
-        return <HomeScreen setActive={setActiveTab} isSafetyModeActive={isSafetyModeActive} />;
+        return <HomeScreen setActive={navigateTo} isSafetyModeActive={isSafetyModeActive} userXP={userXP} userLevel={userLevel} userProfile={userProfile} jobs={adminJobs} applications={applications} />;
       case "Find Job":
-        return <FindGigScreen setActive={setActiveTab} initialSearch={searchParams?.search} />;
+        return <FindGigScreen setActive={navigateTo} initialSearch={screenParams?.search} jobs={adminJobs} applications={applications} />;
       case "My Jobs":
-        return <MyJobsScreen setActive={setActiveTab} />;
+        return <MyJobsScreen setActive={navigateTo} params={screenParams} />;
       case "Attendance":
-        return <AttendanceScreen setActive={setActiveTab} />;
+        return <AttendanceScreen setActive={navigateTo} screenParams={screenParams} />;
       case "Tasks":
-        return <TasksScreen setActive={setActiveTab} />;
+        return <TasksScreen setActive={navigateTo} params={screenParams} />;
       case "Earnings":
-        return <EarningsScreen setActive={setActiveTab} />;
+        return <EarningsScreen setActive={navigateTo} />;
       case "Earnings Planner":
-        return <EarningsPlannerScreen setActive={setActiveTab} earningsGoal={earningsGoal} setEarningsGoal={setEarningsGoal} />;
+        return <EarningsPlannerScreen setActive={navigateTo} earningsGoal={earningsGoal} setEarningsGoal={setEarningsGoal} />;
       case "Safety":
-        return <SafetyScreen setActive={setActiveTab} isSafetyModeActive={isSafetyModeActive} setIsSafetyModeActive={setIsSafetyModeActive} />;
+        return <SafetyScreen setActive={navigateTo} isSafetyModeActive={isSafetyModeActive} setIsSafetyModeActive={setIsSafetyModeActive} />;
       case "Job Details":
-        return <JobDetailsScreen setActive={setActiveTab} />;
+        return <JobDetailsScreen setActive={navigateTo} params={screenParams} user={user} userProfile={userProfile} />;
       case "Genie AI":
-        return <ChatScreen setActive={setActiveTab} onNavigate={(screen, params) => {
-          setSearchParams(params);
-          setActiveTab(screen);
+        return <ChatScreen setActive={navigateTo} onNavigate={(screen, params) => {
+          navigateTo(screen, params);
         }} />;
       case "Profile":
-        return <ProfileScreen setActive={setActiveTab} onLogout={handleLogout} userProfile={userProfile} />;
+        return <ProfileScreen 
+          setActive={navigateTo} 
+          onLogout={handleLogout} 
+          userProfile={userProfile} 
+          userXP={userXP} 
+          userLevel={userLevel} 
+          isDarkMode={isDarkMode} 
+          setIsDarkMode={setIsDarkMode} 
+          applicationsCount={applications.length}
+        />;
       case "Benefits":
-        return <BenefitsScreen setActive={setActiveTab} />;
+        return <BenefitsScreen setActive={navigateTo} />;
       case "Loans":
-        return <LoansScreen setActive={setActiveTab} />;
+        return <LoansScreen setActive={navigateTo} />;
       case "Onboarding":
         return <OnboardingScreen onComplete={handleOnboardingComplete} />;
       default:
-        return <HomeScreen setActive={setActiveTab} isSafetyModeActive={isSafetyModeActive} />;
+        return <HomeScreen setActive={navigateTo} isSafetyModeActive={isSafetyModeActive} userXP={userXP} userLevel={userLevel} userProfile={userProfile} />;
     }
   };
 
@@ -267,20 +317,25 @@ function App() {
         </motion.div>
       </AnimatePresence>
       
-      {isLoggedIn && (
-        <GenieActionBar 
-          activeTab={activeTab} 
-          userRole={userRole} 
-          suggestions={activeSuggestions} 
-          onAction={handleSuggestionAction}
-          onVoiceOpen={() => setIsVoiceOpen(true)}
-        />
-      )}
 
       <GenieVoiceAssistant 
         isOpen={isVoiceOpen} 
         onClose={() => setIsVoiceOpen(false)} 
         onAction={handleVoiceAction} 
+      />
+
+      {/* Persistent AI Assistant */}
+      <AIChatbot 
+        onNavigate={navigateTo} 
+        isAdmin={userRole === 'admin'} 
+        userContext={{
+          role: userRole,
+          xp: userXP,
+          level: userLevel?.level,
+          onboardingStatus: userProfile ? 'complete' : 'pending',
+          activeTab: activeTab,
+          availableJobs: adminJobs // Provide live jobs for context
+        }}
       />
     </div>
   );

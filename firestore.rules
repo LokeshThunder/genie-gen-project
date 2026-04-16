@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isWorker() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'worker' || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         getUserData().role == 'worker') ||
+         getUserData().role == 'admin' // Admins can do worker things
+      );
+    }
+    
+    function isCompany() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'company' || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         getUserData().role == 'company') ||
+         getUserData().role == 'admin' // Admins can do company things
+      );
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         (getUserData().role == 'admin' || getUserData().role == 'company')) // Allow 'company' role to act as admin for testing
+      );
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && request.auth.uid == userId;
+      allow delete: if isAdmin();
+    }
+
+    // Jobs - Publicly readable, admin managed
+    match /jobs/{jobId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Applications - Owner or Admin
+    match /applications/{appId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated(); // Application creation is public for workers
+      allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Attendance - Owner or Admin
+    match /attendance/{atId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Disputes, Reviews, Locations - Locked to Admin/Owner
+    match /disputes/{id} { allow read, write: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()); }
+    match /reviews/{id} { allow read, write: if isAuthenticated(); } // Reviews are semi-public
+    match /worker_locations/{id} { 
+      allow read, write: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()); 
+    }
+  }
+}

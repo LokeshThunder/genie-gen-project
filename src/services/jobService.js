@@ -1,21 +1,19 @@
-/**
- * JobService - Backend service for Job Genie
- * Handles jobs, applications, attendance, and earnings.
- */
+import { FirestoreService } from './firestoreService';
+import { db } from './firebaseConfig';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 const SYNC_QUEUE_KEY = 'genie_sync_queue';
 
-export const AVAILABLE_GIGS = [
-  { id: "gig_001", title: "Warehouse Packer", company: "Zomato Hyperpure", loc: "Madipakkam, Chennai", pay: "₹850", payFreq: "PER DAY", distance: "2.4 KM", time: "09:00 - 18:00", shift: "DAY", color: "#E11D48", urgent: true, category: "Warehousing" },
-  { id: "gig_002", title: "Delivery Partner", company: "Swiggy Instamart", loc: "Velachery, Chennai", pay: "₹700", payFreq: "PER DAY", distance: "4.1 KM", time: "18:00 - 02:00", shift: "NIGHT", color: "#F59E0B", perfectMatch: true, category: "Delivery" },
-  { id: "gig_003", title: "Site Security", company: "G4S Solutions", loc: "Madipakkam, Chennai", pay: "₹950", payFreq: "PER DAY", distance: "1.8 KM", time: "20:00 - 06:00", shift: "NIGHT", color: "#1E293B", category: "Security" },
-  { id: "gig_004", title: "Retail Assistant", company: "Reliance Smart", loc: "T. Nagar, Chennai", pay: "₹600", payFreq: "PER DAY", distance: "8.5 KM", time: "10:00 - 19:00", shift: "DAY", color: "#06B6D4", category: "Retail" },
-  { id: "gig_005", title: "Inventory Manager", company: "Amazon Flex", loc: "Guindy, Chennai", pay: "₹1200", payFreq: "PER DAY", distance: "5.2 KM", time: "08:00 - 17:00", shift: "DAY", color: "#F97316", urgent: true, category: "Warehousing" }
-];
-
 export const JobService = {
   // Sync Logic
-  getQueue: () => JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '[]'),
+  getQueue: () => {
+    try {
+      return JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '[]');
+    } catch (e) {
+      console.error("Error parsing sync queue:", e);
+      return [];
+    }
+  },
   
   addToQueue: (action, data) => {
     const queue = JobService.getQueue();
@@ -24,60 +22,132 @@ export const JobService = {
     console.log(`[Offline Sync] Action queued: ${action}`);
   },
 
-  processSync: async () => {
+  processSync: async (userId) => {
     const queue = JobService.getQueue();
     if (queue.length === 0) return;
     
     console.log(`[Offline Sync] Processing ${queue.length} items...`);
-    // In a real app, we would loop and call the API here
-    localStorage.setItem(SYNC_QUEUE_KEY, '[]');
-    console.log(`[Offline Sync] Processed successfully.`);
+    const remainingQueue = [];
+
+    for (const item of queue) {
+      try {
+        if (item.action === 'checkIn') {
+          await FirestoreService.markAttendance(userId, item.data.jobId, {
+            checkInTime: item.timestamp,
+            location: item.data.location,
+            concludedStatus: 'IN PROGRESS'
+          });
+        } else if (item.action === 'checkOut') {
+          await FirestoreService.markAttendance(userId, item.data.jobId, {
+            checkOutTime: item.timestamp,
+            concludedStatus: 'COMPLETED'
+          });
+          // Also award XP
+          await FirestoreService.awardUserXP(userId, 150);
+        }
+      } catch (e) {
+        console.error(`[Offline Sync] Failed to sync item ${item.id}:`, e);
+        remainingQueue.push(item);
+      }
+    }
+    
+    localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(remainingQueue));
+    console.log(`[Offline Sync] Sync complete. ${remainingQueue.length} items remaining.`);
   },
 
-  // Return real gigs
+  // Return real gigs from Firestore
   getGigs: async () => {
-    return AVAILABLE_GIGS;
+    return await FirestoreService.getJobs();
   },
 
-  // Return empty array for applications
-  getMyApplications: async () => {
-    return [];
+  // Return real applications for user
+  getMyApplications: async (userId) => {
+    if (!userId) return [];
+    const appsRef = collection(db, 'applications');
+    const q = query(appsRef, where('workerId', '==', userId));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
 
-  // Return empty array for active jobs
-  getActiveJobs: async () => {
-    return [];
+  // Return real active jobs (Approved/Active status)
+  getActiveJobs: async (userId) => {
+    if (!userId) return [];
+    const appsRef = collection(db, 'applications');
+    const q = query(appsRef, where('workerId', '==', userId), where('status', 'in', ['Approved', 'Active']));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
 
   // Attendance Actions
-  checkIn: async (jobId, photo, location) => {
+  checkIn: async (userId, jobId, photo, location) => {
+    const checkInData = {
+      checkInTime: new Date().toISOString(),
+      location: location || 'Unknown',
+      photo: photo || '',
+      concludedStatus: 'IN PROGRESS'
+    };
+
     if (!navigator.onLine) {
-      JobService.addToQueue('checkIn', { jobId, location });
+      JobService.addToQueue('checkIn', { jobId, location: checkInData.location });
       return { success: true, offline: true, time: new Date().toLocaleTimeString() };
     }
-    console.log(`Checking in for job ${jobId} at`, location);
-    return { success: true, time: new Date().toLocaleTimeString() };
+    
+    try {
+      await FirestoreService.markAttendance(userId, jobId, checkInData);
+      return { success: true, time: new Date().toLocaleTimeString() };
+    } catch (e) {
+      console.error("CheckIn Error:", e);
+      return { success: false, error: e.message };
+    }
   },
 
-  checkOut: async (jobId, photo, location) => {
+  checkOut: async (userId, jobId, photo, location) => {
+    const checkOutData = {
+      checkOutTime: new Date().toISOString(),
+      location: location || 'Unknown',
+      concludedStatus: 'COMPLETED'
+    };
+
     if (!navigator.onLine) {
-      JobService.addToQueue('checkOut', { jobId, location });
+      JobService.addToQueue('checkOut', { jobId, location: checkOutData.location });
       return { success: true, offline: true, earnings: 0 };
     }
-    console.log(`Checking out from job ${jobId} at`, location);
-    return { success: true, earnings: 0 };
+
+    try {
+      await FirestoreService.markAttendance(userId, jobId, checkOutData);
+      await FirestoreService.awardUserXP(userId, 150);
+      return { success: true, earnings: 150 }; // Simplified earnings as XP for now
+    } catch (e) {
+      console.error("CheckOut Error:", e);
+      return { success: false, error: e.message };
+    }
   },
 
   // Return empty array for tasks
-  getTasks: async (jobId) => {
+  getTasks: async () => {
     return [];
   },
 
-  // Return zeroed earnings
-  getEarnings: async () => {
-    return {
-      total: 0,
-      breakdown: []
-    };
+  // Earnings Logic - Real-time calculation from attendance
+  getEarnings: async (userId) => {
+    if (!userId) return { total: 0, breakdown: [] };
+    const attendanceRef = collection(db, 'attendance');
+    const q = query(attendanceRef, where('workerId', '==', userId));
+    const snap = await getDocs(q);
+    
+    let total = 0;
+    const breakdown = snap.docs.map(doc => {
+      const data = doc.data();
+      const amount = data.concludedStatus === 'COMPLETED' ? 150 : 0; 
+      total += amount;
+      return {
+        id: doc.id,
+        job: data.jobTitle || 'Gig Completed',
+        amount,
+        date: data.updatedAt?.toDate() || new Date(),
+      };
+    }).filter(i => i.amount > 0);
+
+    return { total, breakdown };
   }
 };

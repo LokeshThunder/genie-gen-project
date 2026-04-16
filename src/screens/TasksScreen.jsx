@@ -1,26 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import NavBar from '../components/NavBar';
 import { JobService } from '../services/jobService';
+import { FirestoreService } from '../services/firestoreService';
 
-const TasksScreen = ({ setActive }) => {
+const TasksScreen = ({ setActive, screenParams }) => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const appId = screenParams?.appId;
 
   useEffect(() => {
-    const loadTasks = async () => {
-      setLoading(true);
-      const data = await JobService.getTasks('1');
-      setTasks(data);
+    if (!appId) {
+      console.warn("No appId provided to TasksScreen");
       setLoading(false);
-    };
-    loadTasks();
-  }, []);
+      return;
+    }
 
-  const toggleTask = (id) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+    const unsubscribe = FirestoreService.streamApplicationTasks(
+      appId,
+      (data) => {
+        setTasks(data);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("TasksScreen Stream Error:", err);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [appId]);
+
+  const toggleTask = async (taskId, currentStatus) => {
+    const newStatus = currentStatus === 'Completed' ? 'Pending' : 'Completed';
+    try {
+      await FirestoreService.updateTaskStatus(appId, taskId, newStatus);
+    } catch (err) {
+      console.error("Err toggling task:", err);
+    }
   };
 
-  const completedCount = tasks.filter(t => t.completed).length;
+  const completedCount = tasks.filter(t => t.status === 'Completed').length;
   const progress = tasks.length > 0 ? (completedCount / tasks.length) * 100 : 0;
 
   return (
@@ -72,7 +91,7 @@ const TasksScreen = ({ setActive }) => {
           tasks.map(task => (
             <div 
               key={task.id}
-              onClick={() => toggleTask(task.id)}
+              onClick={() => toggleTask(task.id, task.status)}
               className="tap-effect"
               style={{ 
                 background: '#fff', 
@@ -83,7 +102,7 @@ const TasksScreen = ({ setActive }) => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 15,
-                opacity: task.completed ? 0.7 : 1,
+                opacity: task.status === 'Completed' ? 0.7 : 1,
                 cursor: 'pointer'
               }}
             >
@@ -91,21 +110,21 @@ const TasksScreen = ({ setActive }) => {
                 width: 28, 
                 height: 28, 
                 borderRadius: 8, 
-                border: task.completed ? 'none' : '2px solid #E5E7EB',
-                background: task.completed ? '#22c55e' : 'transparent',
+                border: task.status === 'Completed' ? 'none' : '2px solid #E5E7EB',
+                background: task.status === 'Completed' ? '#22c55e' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
               }}>
-                {task.completed && <span style={{ color: '#fff', fontSize: 14 }}>✓</span>}
+                {task.status === 'Completed' && <span style={{ color: '#fff', fontSize: 14 }}>✓</span>}
               </div>
               
               <div style={{ flex: 1 }}>
                 <div style={{ 
                   fontSize: 14, 
                   fontWeight: 700, 
-                  color: task.completed ? '#888' : '#111',
-                  textDecoration: task.completed ? 'line-through' : 'none'
+                  color: task.status === 'Completed' ? '#888' : '#111',
+                  textDecoration: task.status === 'Completed' ? 'line-through' : 'none'
                 }}>
                   {task.title}
                 </div>
@@ -117,7 +136,7 @@ const TasksScreen = ({ setActive }) => {
                 )}
               </div>
 
-              {!task.completed && task.requiresPhoto && (
+              {task.status !== 'Completed' && task.requiresPhoto && (
                 <div className="tap-effect" style={{ width: 34, height: 34, borderRadius: 10, background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <span style={{ fontSize: 14 }}>📷</span>
                 </div>

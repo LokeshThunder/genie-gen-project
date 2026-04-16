@@ -2,10 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { aiService } from '../services/aiService';
 
-const AIChatbot = () => {
+const AIChatbot = ({ onNavigate, isAdmin = false, userContext = null }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
-    { role: 'bot', text: 'Hello! I am your Jitro Assistant. How can I help you today? 🧞' }
+    { isBot: true, text: 'Hello! I am your Jitro Assistant. How can I help you today? 🧞', rawText: 'Hello! I am your Jitro Assistant. How can I help you today? 🧞' }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -30,16 +30,35 @@ const AIChatbot = () => {
     const trimmedInput = textInput.trim();
     if (!trimmedInput) return;
     
-    const userMsg = { role: 'user', text: trimmedInput };
+    const userMsg = { isBot: false, text: trimmedInput, rawText: trimmedInput };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
     
     try {
-      const response = await aiService.chat(trimmedInput, messages);
-      setMessages(prev => [...prev, { role: 'bot', text: response }]);
+      const response = await aiService.chat(trimmedInput, messages, isAdmin, userContext);
+      // response is { type, content } or { type, message } — extract readable text
+      let displayText;
+      if (typeof response === 'string') {
+        displayText = response;
+      } else if (response.type === 'navigation') {
+        displayText = response.message || `Navigating to ${response.screen}...`;
+        
+        // Dynamic Navigation Logic
+        if (onNavigate) {
+          setTimeout(() => {
+            onNavigate(response.screen, response.params || {});
+            setIsOpen(false);
+          }, 1000);
+        }
+      } else if (response.type === 'file') {
+        displayText = response.message || 'File generated.';
+      } else {
+        displayText = response.content || JSON.stringify(response);
+      }
+      setMessages(prev => [...prev, { isBot: true, text: displayText, rawText: displayText }]);
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'bot', text: "Service temporarily unavailable. Jitro Engine is recalibrating. 🧞" }]);
+      setMessages(prev => [...prev, { isBot: true, text: "Service temporarily unavailable. Jitro Engine is recalibrating. 🧞", rawText: '' }]);
     } finally {
       setIsTyping(false);
     }
@@ -54,7 +73,7 @@ const AIChatbot = () => {
           whileHover={{ scale: 1.05, translateY: -4 }}
           whileTap={{ scale: 0.95 }}
           style={{ 
-            position: 'fixed', bottom: 100, right: 30, width: 64, height: 64, borderRadius: '50%', 
+            position: 'fixed', bottom: 170, right: 24, width: 64, height: 64, borderRadius: '50%', 
             background: 'var(--primary-purple)', color: '#fff', 
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, 
             zIndex: 10000, cursor: 'pointer',
@@ -106,17 +125,17 @@ const AIChatbot = () => {
                   animate={{ opacity: 1, scale: 1 }}
                   key={i} 
                   style={{ 
-                    alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                    background: m.role === 'user' ? 'var(--primary-purple)' : 'var(--bg-subtle)',
-                    color: m.role === 'user' ? '#fff' : 'var(--text-main)',
+                    alignSelf: !m.isBot ? 'flex-end' : 'flex-start',
+                    background: !m.isBot ? 'var(--primary-purple)' : 'var(--bg-subtle)',
+                    color: !m.isBot ? '#fff' : 'var(--text-main)',
                     padding: '12px 18px', 
-                    borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px', 
+                    borderRadius: !m.isBot ? '18px 18px 4px 18px' : '18px 18px 18px 4px', 
                     fontSize: 14, maxWidth: '85%', lineHeight: 1.5,
                     fontWeight: 500,
-                    border: m.role === 'bot' ? '1px solid var(--border-color)' : 'none',
-                    boxShadow: m.role === 'bot' ? 'var(--shadow-sm)' : '0 4px 12px rgba(99, 102, 241, 0.2)'
+                    border: m.isBot ? '1px solid var(--border-color)' : 'none',
+                    boxShadow: m.isBot ? 'var(--shadow-sm)' : '0 4px 12px rgba(99, 102, 241, 0.2)'
                   }}>
-                  {m.text}
+                  {typeof m.text === 'string' ? m.text : JSON.stringify(m.text)}
                 </motion.div>
               ))}
               {isTyping && (

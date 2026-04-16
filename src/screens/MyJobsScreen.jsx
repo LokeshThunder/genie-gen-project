@@ -1,29 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import NavBar from '../components/NavBar';
 import { JobService } from '../services/jobService';
+import { FirestoreService } from '../services/firestoreService';
+import { auth } from '../services/firebaseConfig';
 
 const MyJobsScreen = ({ setActive }) => {
   const [activeTab, setLocalTab] = useState('Active');
-  const [jobs, setJobs] = useState([]);
+  const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const userId = auth.currentUser?.uid;
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      // Simulate API delay with the mock service
-      setTimeout(async () => {
-        const data = await JobService.getMyApplications();
-        const active = await JobService.getActiveJobs();
-        
-        if (activeTab === 'Active') setJobs(active);
-        else if (activeTab === 'Applied') setJobs(data.filter(j => j.status === 'Applied'));
-        else if (activeTab === 'Approved') setJobs(data.filter(j => j.status === 'Approved'));
-        
+    if (!userId) return;
+    
+    const unsubscribe = FirestoreService.streamUserApplications(
+      userId,
+      (data) => {
+        setApplications(data);
         setLoading(false);
-      }, 800);
-    };
-    loadData();
-  }, [activeTab]);
+      },
+      (err) => {
+        console.error("MyJobsScreen Stream Error:", err);
+        setLoading(false);
+      }
+    );
+    
+    return () => unsubscribe();
+  }, [userId]);
+
+  const jobs = applications.filter(app => {
+    if (activeTab === 'Active') return app.status === 'Active';
+    if (activeTab === 'Approved') return app.status === 'Approved';
+    if (activeTab === 'Applied') return app.status === 'Pending';
+    return false;
+  });
 
   const renderJobCard = (job) => (
     <div key={job.id} style={{ 
@@ -36,7 +46,7 @@ const MyJobsScreen = ({ setActive }) => {
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 900, color: '#0F172A', marginBottom: 2 }}>{job.title || 'Warehouse Associate'}</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: '#0F172A', marginBottom: 2 }}>{job.title || job.jobTitle || 'Warehouse Associate'}</div>
           <div style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>{job.company || 'Genie Logistics'}</div>
         </div>
         <div style={{ 
@@ -60,7 +70,7 @@ const MyJobsScreen = ({ setActive }) => {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 16 }}>💰</span>
-          <span style={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>₹700/day</span>
+          <span style={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>₹{job.wage || 700}/day</span>
         </div>
       </div>
 
@@ -68,13 +78,13 @@ const MyJobsScreen = ({ setActive }) => {
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 900, color: '#0F172A', marginBottom: 8 }}>
             <span>Progress</span>
-            <span>{job.progress}%</span>
+            <span>{job.progress || 0}%</span>
           </div>
           <div style={{ height: 8, background: '#F1F5F9', borderRadius: 10, overflow: 'hidden', border: '1px solid #E2E8F0' }}>
-            <div style={{ width: `${job.progress}%`, height: '100%', background: '#5B3FC8', borderRadius: 10, transition: '0.5s ease-out' }} />
+            <div style={{ width: `${job.progress || 0}%`, height: '100%', background: '#5B3FC8', borderRadius: 10, transition: '0.5s ease-out' }} />
           </div>
           <div 
-            onClick={() => setActive('Tasks')}
+            onClick={() => setActive('Tasks', { appId: job.id })}
             className="tap-effect"
             style={{ 
               marginTop: 24, 
@@ -95,9 +105,9 @@ const MyJobsScreen = ({ setActive }) => {
         </div>
       )}
 
-      {(job.status === 'Approved' || job.status === 'Applied') && (
+      {(job.status === 'Approved' || job.status === 'Pending' || job.status === 'Applied') && (
         <div 
-          onClick={() => job.status === 'Approved' ? setActive('Attendance') : null}
+          onClick={() => job.status === 'Approved' ? setActive('Attendance', { appId: job.id, jobId: job.jobId }) : null}
           className="tap-effect"
           style={{ 
             marginTop: 8, 

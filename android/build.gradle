@@ -29,6 +29,16 @@ subprojects {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    // Force Java 17 toolchain for all subprojects that support it
+    afterEvaluate { project ->
+        if (project.plugins.hasPlugin('java') || project.plugins.hasPlugin('com.android.application') || project.plugins.hasPlugin('com.android.library')) {
+            java {
+                toolchain {
+                    languageVersion = JavaLanguageVersion.of(17)
+                }
+            }
+        }
+    }
 }
 
 task clean(type: Delete) {

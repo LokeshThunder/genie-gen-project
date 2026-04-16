@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import NavBar from '../components/NavBar';
 import { JobService } from '../services/jobService';
+import { auth } from '../services/firebaseConfig';
 
 const EarningsScreen = ({ setActive }) => {
   const [earningsData, setEarningsData] = useState(null);
@@ -9,7 +10,8 @@ const EarningsScreen = ({ setActive }) => {
   useEffect(() => {
     const loadEarnings = async () => {
       setLoading(true);
-      const data = await JobService.getEarnings();
+      const userId = auth.currentUser?.uid;
+      const data = await JobService.getEarnings(userId);
       setEarningsData(data);
       setLoading(false);
     };
@@ -54,7 +56,7 @@ const EarningsScreen = ({ setActive }) => {
         {loading ? (
           [1, 2, 3, 4, 5].map(i => <div key={i} className="skeleton" style={{ height: 75, borderRadius: 18, marginBottom: 12 }} />)
         ) : (
-          earningsData?.breakdown.map((item, idx) => (
+          (earningsData?.breakdown || []).map((item, idx) => (
             <div key={idx} style={{ 
               display: 'flex', 
               alignItems: 'center', 
@@ -80,11 +82,11 @@ const EarningsScreen = ({ setActive }) => {
                 ₹
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#111' }}>{item.job}</div>
-                <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>{new Date(item.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#111' }}>{item?.job || 'Platform Task'}</div>
+                <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>{item?.date ? new Date(item.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Recent'}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#22c55e' }}>+₹{item.amount}</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#22c55e' }}>+₹{item?.amount || 0}</div>
                 <div style={{ fontSize: 9, color: '#aaa', fontWeight: 700, marginTop: 2 }}>PAID</div>
               </div>
             </div>

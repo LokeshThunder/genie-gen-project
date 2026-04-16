@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import NavBar from '../components/NavBar';
+import { motion } from 'framer-motion';
+import { XP_LEVELS, getProgressToNextLevel } from '../constants/gamification';
 
-const HomeScreen = ({ setActive, isSafetyModeActive }) => {
+const HomeScreen = ({ setActive, isSafetyModeActive, userXP = 0, userLevel = XP_LEVELS[0], userProfile, jobs = [], applications = [] }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -50,7 +52,7 @@ const HomeScreen = ({ setActive, isSafetyModeActive }) => {
         <div className="full-height-scroll" style={{ padding: "10px 14px 0" }}>
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, color: "#22c55e", fontWeight: 600 }}>Welcome Back,</div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: "#5B3FC8" }}>Genie User</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: "#5B3FC8" }}>{userProfile?.fullName || userProfile?.name || 'Genie User'}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 5, fontSize: 10, color: "#888" }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
               Available for new opportunities...
@@ -88,14 +90,14 @@ const HomeScreen = ({ setActive, isSafetyModeActive }) => {
           </div>
           
           <div style={{ display: "flex", gap: 7, marginBottom: 10 }}>
-            {[{ c: "#5B3FC8", i: "📄", l: "APPLIED" }, { c: "#22c55e", i: "⚡", l: "ACTIVE" }, { c: "#F59E0B", i: "✅", l: "DONE" }].map(s => (
+            {[{ c: "#5B3FC8", i: "📄", l: "APPLIED", v: applications.length }, { c: "#22c55e", i: "⚡", l: "ACTIVE", v: 0 }, { c: "#F59E0B", i: "✅", l: "DONE", v: 0 }].map(s => (
               <div 
                 key={s.l} 
                 onClick={() => setActive('My Jobs')}
                 className="tap-effect" 
                 style={{ flex: 1, background: s.c, borderRadius: 12, padding: "10px 4px", textAlign: "center", color: "#fff", cursor: "pointer" }}>
                 <div style={{ fontSize: 14 }}>{s.i}</div>
-                <div style={{ fontSize: 16, fontWeight: 800 }}>0</div>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{s.v}</div>
                 <div style={{ fontSize: 7, fontWeight: 600, opacity: 0.85 }}>{s.l}</div>
               </div>
             ))}
@@ -138,21 +140,56 @@ const HomeScreen = ({ setActive, isSafetyModeActive }) => {
             </div>
           </div>
           
-          <div className="tap-effect" style={{ background: "#1a1a2e", borderRadius: 14, padding: "12px", marginBottom: 10 }}>
-            <div style={{ fontSize: 8, color: "#F59E0B", letterSpacing: 1, fontWeight: 600 }}>🛡 GENIE PRO STATUS</div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 5 }}>
+          {/* Gamified XP Progression Card */}
+          <motion.div 
+            whileHover={{ y: -2 }}
+            onClick={() => setActive("Profile")}
+            className="tap-effect" 
+            style={{ 
+              background: '#1F1B3D', 
+              borderRadius: 24, 
+              padding: '24px', 
+              marginBottom: 15, 
+              position: 'relative', 
+              overflow: 'hidden',
+              boxShadow: '0 12px 25px rgba(31,27,61,0.2)'
+            }}
+          >
+            {/* Background elements */}
+            <div style={{ position: 'absolute', top: -30, right: -30, width: 100, height: 100, background: 'radial-gradient(circle, rgba(91, 63, 200, 0.3) 0%, transparent 70%)', borderRadius: '50%' }} />
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'relative', zIndex: 1 }}>
               <div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>Bronze L1</div>
-                <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>0 / 20 jobs completed</div>
+                <div style={{ fontSize: 9, fontWeight: 900, color: '#9396FF', letterSpacing: 1.5, marginBottom: 4 }}>GENIE PRO STATUS</div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {userLevel.label} <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.6 }}>Lvl {userLevel.level}</span>
+                </div>
               </div>
-              <div style={{ width: 42, height: 42, borderRadius: "50%", border: "3px solid #92400e", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <span style={{ color: "#F59E0B", fontWeight: 700, fontSize: 11 }}>0%</span>
+              <div 
+                className="pulse-soft-purple"
+                style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
+                {userLevel.level === 1 ? '🥉' : userLevel.level === 2 ? '🥈' : '🥇'}
               </div>
             </div>
-            <div style={{ marginTop: 7, height: 3, background: "#2a2a4a", borderRadius: 4 }}>
-              <div style={{ width: "2%", height: "100%", background: "#5B3FC8", borderRadius: 4 }} />
+
+            <div style={{ marginTop: 24, position: 'relative', zIndex: 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.6)' }}>
+                <span>{userXP} XP</span>
+                <span>{XP_LEVELS[userLevel.level] ? `${XP_LEVELS[userLevel.level].minXp} XP FOR NEXT LEVEL` : 'MAX LEVEL'}</span>
+              </div>
+              <div style={{ height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 10, overflow: 'hidden' }}>
+                <motion.div 
+                   initial={{ width: 0 }}
+                   animate={{ width: `${getProgressToNextLevel(userXP)}%` }}
+                   className="xp-glow"
+                   style={{ height: '100%', background: 'linear-gradient(90deg, #6C3FC5, #9396FF)', borderRadius: 10 }}
+                />
+              </div>
+              <div style={{ marginTop: 12, fontSize: 10, color: '#9396FF', fontWeight: 600 }}>
+                {userLevel.bonus > 0 ? `🔥 +${((userLevel.bonus - 1) * 100).toFixed(0)}% EARNINGS BOOST ACTIVE` : 'KEEP EARNING TO UNLOCK BOOSTS'}
+              </div>
             </div>
-          </div>
+          </motion.div>
           
 
           <div style={{ padding: "20px", textAlign: "center", color: "#888", fontSize: 13 }}>

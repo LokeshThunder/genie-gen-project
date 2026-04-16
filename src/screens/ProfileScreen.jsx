@@ -2,7 +2,7 @@ import React from 'react';
 import NavBar from '../components/NavBar';
 import { BADGES, getProgressToNextLevel } from '../constants/gamification';
 
-const ProfileScreen = ({ setActive, onLogout, isAdmin, userProfile, userXP = 0, userLevel = { level: 1, label: 'Beginner' }, isDarkMode, setIsDarkMode }) => {
+const ProfileScreen = ({ setActive, onLogout, isAdmin, userProfile, userXP = 0, userLevel = { level: 1, label: 'Beginner' }, isDarkMode, setIsDarkMode, jobsCount = 0, applicationsCount = 0 }) => {
   const progress = getProgressToNextLevel(userXP);
   return (
     <div className="fade-in" style={{ height: "100%", background: "var(--bg-light)", display: "flex", flexDirection: "column" }}>
@@ -47,8 +47,8 @@ const ProfileScreen = ({ setActive, onLogout, isAdmin, userProfile, userXP = 0, 
         <div style={{ background: "var(--card-bg)", borderRadius: 16, padding: "14px", marginBottom: 12, border: '1px solid var(--border-color)' }}>
           <div style={{ display: "flex", justifyContent: "space-around" }}>
             {(isAdmin 
-              ? [ { v: "0", l: "POSTED" }, { v: "₹0", l: "SPENT", ic: "💳" }, { v: "0.0", l: "RATING", ic: "⭐" } ]
-              : [ { v: "0", l: "JOBS" }, { v: "₹0", l: "EARNINGS", ic: "💳" }, { v: "0.0", l: "RATING", ic: "⭐" } ]
+              ? [ { v: jobsCount, l: "POSTED" }, { v: applicationsCount, l: "HIRED", ic: "🤝" }, { v: "0.0", l: "RATING", ic: "⭐" } ]
+              : [ { v: applicationsCount, l: "GIGS" }, { v: "₹0", l: "EARNINGS", ic: "💳" }, { v: "5.0", l: "RATING", ic: "⭐" } ]
             ).map(s => (
               <div key={s.l} style={{ textAlign: "center" }}>
                 {s.ic && <div style={{ fontSize: 16 }}>{s.ic}</div>}

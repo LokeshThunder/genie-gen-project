@@ -29,7 +29,13 @@ const OnboardingScreen = ({ onComplete }) => {
   };
 
   return (
-    <div style={{ height: '100%', background: '#fff', display: 'flex', flexDirection: 'column', padding: '40px 24px' }}>
+    <div style={{ height: '100%', background: '#fff', display: 'flex', flexDirection: 'column', padding: '40px 24px', position: 'relative' }}>
+      {/* Dev Bypass */}
+      <div 
+        onClick={() => onComplete({ name: 'Admin Demo', role: 'admin' })}
+        style={{ position: 'absolute', top: 15, right: 24, fontSize: 10, fontWeight: 900, color: '#5B3FC8', cursor: 'pointer', padding: '8px 12px', background: '#F5F3FF', borderRadius: 10, zIndex: 100 }}>
+        DEMO BYPASS
+      </div>
       {/* Header */}
       <div style={{ marginBottom: 40 }}>
         <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>

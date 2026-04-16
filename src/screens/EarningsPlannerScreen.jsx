@@ -12,8 +12,12 @@ const EarningsPlannerScreen = ({ setActive, earningsGoal, setEarningsGoal, userX
   useEffect(() => {
     const fetchForecast = async () => {
       setLoadingForecast(true);
-      const data = await aiService.getEarningsForecast(earningsGoal || 15000, userXP);
-      setForecast(data);
+      try {
+        const data = await aiService.getEarningsForecast(earningsGoal || 15000, userXP);
+        setForecast(data);
+      } catch (e) {
+        console.error("Forecast fetch error:", e);
+      }
       setLoadingForecast(false);
     };
     fetchForecast();
@@ -83,15 +87,17 @@ const EarningsPlannerScreen = ({ setActive, earningsGoal, setEarningsGoal, userX
 
                    <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 10 }}>UPCOMING SURGE WINDOWS</div>
                    <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 5 }} className="no-scrollbar">
-                      {forecast?.surgeWindows?.map((sw, i) => (
+                      {(forecast?.surgeWindows || []).length > 0 ? (forecast?.surgeWindows || []).map((sw, i) => (
                          <div key={i} style={{ flexShrink: 0, width: 120, background: 'var(--bg-light)', borderRadius: 12, padding: '10px', border: '1px solid var(--border-color)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                               <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-main)' }}>{sw.day}</span>
-                               <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--primary-purple)' }}>{sw.multiplier}</span>
+                               <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-main)' }}>{sw?.day || 'Today'}</span>
+                               <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--primary-purple)' }}>{sw?.multiplier || '1.0x'}</span>
                             </div>
-                            <div style={{ fontSize: 9, color: 'var(--text-muted)', lineHeight: 1.3 }}>{sw.reason}</div>
+                            <div style={{ fontSize: 9, color: 'var(--text-muted)', lineHeight: 1.3 }}>{sw?.reason || 'Standard Demand'}</div>
                          </div>
-                      ))}
+                      )) : (
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', padding: '5px' }}>No upcoming surges predicted yet.</div>
+                      )}
                    </div>
                 </div>
              )}
@@ -101,12 +107,12 @@ const EarningsPlannerScreen = ({ setActive, earningsGoal, setEarningsGoal, userX
           <div style={{ marginBottom: 30 }}>
              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 }}>
                 <h3 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-main)' }}>Journey Progress</h3>
-                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--primary-purple)' }}>{progressPercent.toFixed(0)}% Completed</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--primary-purple)' }}>{(progressPercent || 0).toFixed(0)}% Completed</span>
              </div>
              <div style={{ height: 12, background: 'var(--border-color)', borderRadius: 10, position: 'relative', overflow: 'hidden' }}>
                 <motion.div 
                   initial={{ width: 0 }}
-                  animate={{ width: `${progressPercent}%` }}
+                  animate={{ width: `${progressPercent || 0}%` }}
                   style={{ height: '100%', background: 'var(--primary-purple)', borderRadius: 10 }}
                 />
              </div>
@@ -115,33 +121,33 @@ const EarningsPlannerScreen = ({ setActive, earningsGoal, setEarningsGoal, userX
           {/* AI Roadmap */}
           <div style={{ marginBottom: 20 }}>
              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 15 }}>
-                <span style={{ fontSize: 20 }}>🧞</span>
+                <span style={{ fontSize: 20 }}></span>
                 <h3 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-main)' }}>AI Suggested Roadmap</h3>
              </div>
 
              <div className="roadmap-line" style={{ paddingLeft: 10, borderLeft: '2px dashed var(--border-color)' }}>
-                {roadmap.map((m, i) => (
+                {(roadmap || []).map((m, i) => (
                    <div key={i} style={{ display: 'flex', gap: 20, marginBottom: 25, position: 'relative', zIndex: 1 }}>
                       <div style={{ 
-                        width: 32, height: 32, borderRadius: '50%', background: m.reached ? 'var(--primary-purple)' : 'var(--bg-light)', 
+                        width: 32, height: 32, borderRadius: '50%', background: m?.reached ? 'var(--primary-purple)' : 'var(--bg-light)', 
                         display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                        fontSize: 12, fontWeight: 900, color: m.reached ? '#fff' : 'var(--text-muted)',
+                        fontSize: 12, fontWeight: 900, color: m?.reached ? '#fff' : 'var(--text-muted)',
                         border: '4px solid var(--card-bg)',
                         marginLeft: -17,
                         boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
                       }}>
-                         {m.reached ? '✓' : '•'}
+                         {m?.reached ? '✓' : '•'}
                       </div>
                       <div style={{ flex: 1, paddingTop: 4 }}>
-                         <div style={{ fontWeight: 800, fontSize: 14, color: m.reached ? 'var(--text-main)' : 'var(--text-muted)' }}>{m.title}</div>
-                         <div style={{ fontSize: 12, color: m.reached ? 'var(--primary-purple)' : 'var(--text-muted)', fontWeight: 700 }}>Target: ₹{m.amount.toLocaleString()}</div>
-                         {!m.reached && i === 2 && !loadingForecast && (
+                         <div style={{ fontWeight: 800, fontSize: 14, color: m?.reached ? 'var(--text-main)' : 'var(--text-muted)' }}>{m?.title || 'Milestone'}</div>
+                         <div style={{ fontSize: 12, color: m?.reached ? 'var(--primary-purple)' : 'var(--text-muted)', fontWeight: 700 }}>Target: ₹{m?.amount?.toLocaleString() || '0'}</div>
+                         {!m?.reached && i === 2 && !loadingForecast && (
                             <motion.div 
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              style={{ marginTop: 10, background: 'rgba(91, 63, 200, 0.05)', borderRadius: 12, padding: '12px', border: '1px dashed var(--primary-purple)' }}>
-                               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary-purple)' }}>GENIE ADVICE</div>
-                               <div style={{ fontSize: 10, color: 'var(--text-main)', marginTop: 2 }}>{forecast?.advice || 'Stay active!'}</div>
+                               initial={{ opacity: 0, y: 10 }}
+                               animate={{ opacity: 1, y: 0 }}
+                               style={{ marginTop: 10, background: 'rgba(91, 63, 200, 0.05)', borderRadius: 12, padding: '12px', border: '1px dashed var(--primary-purple)' }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary-purple)' }}>GENIE ADVICE</div>
+                                <div style={{ fontSize: 10, color: 'var(--text-main)', marginTop: 2 }}>{forecast?.advice || 'Keep working toward your goal! ✨'}</div>
                             </motion.div>
                          )}
                       </div>

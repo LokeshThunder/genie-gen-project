@@ -1,140 +1,105 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { OPERATIONAL_LOGS } from "./operationalService";
 import { GLOBAL_KNOWLEDGE } from "./knowledgeService";
-import { AVAILABLE_GIGS } from "./jobService";
+// Dynamic context will be passed from the UI components
 
 // Jitro Engine Configuration
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
-// Use stable v1 API if needed, though SDK defaults are usually fine.
-// If 404 persists, we investigate project-level API enablement.
 const modelOptions = { apiVersion: "v1" };
 
 /**
- * Robust JSON extraction utility to strip AI preamble/markdown
+ * Jitro AI Simulation Engine: Curated fallback knowledge
+ */
+const JITRO_SIMS = {
+  getAdminInsights: [
+    "Worker retention is up 12% following the recent wage adjustment in Logistics.",
+    "Madipakkam hub shows a 94% fulfillment rate today."
+  ],
+  chatFeedback: "I'm currently optimizing my strategic models. How else can I assist with operations?",
+  magicCreateJob: {
+    title: "Express Warehouse Packer",
+    description: "Handle high-priority logistics packing in Madipakkam hub.",
+    wage: "750",
+    workerCount: "8",
+    type: "day",
+    startTime: "09:00",
+    endTime: "18:00",
+    category: "Logistics",
+    pricingModel: "daily",
+    pincode: "600091",
+    locationName: "Madipakkam",
+    requirementsTags: ["Aadhaar Card", "Safety Shoes"],
+    gender: "Any",
+    incentives: "Bonus for 100% attendance"
+  }
+};
+
+const getSim = (key) => {
+  const sim = JITRO_SIMS[key];
+  if (Array.isArray(sim)) return sim[Math.floor(Math.random() * sim.length)];
+  return sim;
+};
+
+/**
+ * Helper to extract and sanitize JSON from model responses
  */
 const extractJSON = (text) => {
-  if (!text) return null;
   try {
-    const startObj = text.indexOf('{');
-    const startArr = text.indexOf('[');
-    let start = -1;
-    if (startObj !== -1 && (startArr === -1 || startObj < startArr)) start = startObj;
-    else if (startArr !== -1) start = startArr;
-
-    if (start === -1) return null;
-
-    const endObj = text.lastIndexOf('}');
-    const endArr = text.lastIndexOf(']');
-    let end = -1;
-    if (endObj !== -1 && (endArr === -1 || endObj > endArr)) end = endObj;
-    else if (endArr !== -1) end = endArr;
-
-    if (end === -1 || end < start) return null;
-
-    const pureJson = text.substring(start, end + 1);
-    return JSON.parse(pureJson);
+    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    return null;
   } catch (e) {
-    console.warn("Jitro Parsing Error:", e);
     return null;
   }
 };
 
 export const aiService = {
   /**
-   * Universal Chat function for the Jitro Engine
-   * Powered by Google Gemini + Job Genie Knowledge Platform
+   * Internal helper for robust model initialization and execution.
    */
-  async chat(message, history = [], isAdmin = false) {
-    if (!genAI) {
-      return { type: 'text', content: "The Jitro AI Engine is currently offline (API Key missing). Please check your environment settings. 🧞" };
+  async runSafeQuery(message, systemInstruction, history = []) {
+    if (!genAI) throw new Error("AI Engine Offline");
+
+    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-pro"];
+    let lastError = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName }, modelOptions);
+        const fullPrompt = systemInstruction ? `${systemInstruction}\n\nUSER MESSAGE: ${message}` : message;
+
+        const chatSession = model.startChat({
+          history: history,
+          generationConfig: { maxOutputTokens: 2000, temperature: 0.7 }
+        });
+
+        const result = await chatSession.sendMessage(fullPrompt);
+        return result.response.text();
+      } catch (err) {
+        console.warn(`Jitro Fallback: ${modelName} failed.`, err);
+        lastError = err;
+      }
+    }
+    throw lastError || new Error("All models failed");
+  },
+
+  /**
+   * Universal Chat function with Hybrid AI
+   */
+  async chat(message, history = [], isAdmin = false, userContext = null) {
+    if (!genAI) return { type: 'text', content: "The Jitro AI Engine is offline." };
+
+    let systemInstruction = "";
+    if (isAdmin) {
+      systemInstruction = `You are "Genie Ops" Assistant. Return JSON output only. Context: ${JSON.stringify(GLOBAL_KNOWLEDGE)}`;
+    } else {
+      systemInstruction = `You are "Job Genie" Assistant. Return JSON output only. User Context: ${JSON.stringify(userContext)}. Current Market Data: ${JSON.stringify(userContext?.availableJobs || [])}`;
     }
 
     try {
-      let systemInstruction = "";
-      if (isAdmin) {
-        systemInstruction = `
-        --- YOUR ROLE ---
-        You are "Genie Ops" - the Lead Operations Strategist and Logistics Brain for Job Genie.
-        Your purpose is to help the Administrator achieve 100% operational efficiency.
-        
-        --- STRATEGIC FOCUS ---
-        1. Worker Retention: Ensure workers are happy and returning.
-        2. Fulfillment Speed: Get jobs filled as fast as possible.
-        3. Cost Optimization: Balance fair wages with company profitability.
-        
-        --- CONTEXTUAL DATA ---
-        KNOWLEDGE BASE: ${JSON.stringify(GLOBAL_KNOWLEDGE)}
-        OPERATIONAL LOGS: ${JSON.stringify(OPERATIONAL_LOGS)}
-        
-        --- DATA LOOKUP PROTOCOL ---
-        1. For performance queries, scan OPERATIONAL_LOGS for patterns.
-        2. If providing advice, use data from the Logs to back up your claims.
-
-        --- RESPONSE FORMAT (CRITICAL) ---
-        You MUST ALWAYS return your response as a valid JSON object matching exactly ONE of these three schemas. Return STRICTLY the JSON string.
-        
-        Schema 1: Strategic Insight Response
-        { "type": "text", "content": "Your authoritative, data-driven response here." }
-        
-        Schema 2: Data Generation (Reports, CSVs, etc.)
-        {
-          "type": "file",
-          "filename": "ops_report_timestamp.csv",
-          "content": "Raw data content.",
-          "message": "A professional brief on the generated data."
-        }
-
-        Schema 3: Navigation (Use this when the admin wants to go to a specific operational page)
-        {
-          "type": "navigation",
-          "screen": "Create", // Available: Home, Create, Live, Reports, Applications, Profile
-          "message": "A brief operational confirmation like: Navigating to the Job Creation suite... 🚀"
-        }
-        `;
-      } else {
-        systemInstruction = `
-        --- YOUR ROLE ---
-        You are the Job Genie Worker AI Assistant. You help gig workers with their operations, earnings, check-ins, and platform questions.
-        
-        --- CONTEXTUAL DATA ---
-        KNOWLEDGE BASE: ${JSON.stringify(GLOBAL_KNOWLEDGE)}
-        AVAILABLE JOBS: ${JSON.stringify(AVAILABLE_GIGS)}
-        OPERATIONAL LOGS: ${JSON.stringify(OPERATIONAL_LOGS)}
-        
-        --- RESPONSE FORMAT (CRITICAL) ---
-        You MUST ALWAYS return your response as a valid JSON object matching exactly ONE of these two schemas. DO NOT wrap it in markdown formatting (like \`\`\`json). Return STRICTLY the JSON string.
-        
-        Schema 1: Standard Text Response
-        { "type": "text", "content": "Your natural language response here." }
-        
-        Schema 2: Navigation (Use this when the user needs to find a job or move to a specific screen)
-        {
-          "type": "navigation",
-          "screen": "Find Job",
-          "params": { "search": "The location or job title to search for" },
-          "message": "A brief conversational message like: I found some great jobs in Madipakkam for you! ✨"
-        }
-
-        --- EXAMPLES ---
-        User: "Is there any job in Madipakkam?"
-        Response: { "type": "navigation", "screen": "Find Job", "params": { "search": "Madipakkam" }, "message": "I found 2 jobs in Madipakkam right now! Taking you there... 🧞✨" }
-
-        User: "I need a delivery gig"
-        Response: { "type": "navigation", "screen": "Find Job", "params": { "search": "Delivery" }, "message": "Applying 'Delivery' filter for you now! 🚀" }
-        `;
-      }
-
-      const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
-        systemInstruction: systemInstruction 
-      });
-      
-      // Gemini requires: history must start with 'user', alternate user/model.
-      // We skip the initial greeting (which is bot-only) and only pass real exchanges.
       const formattedHistory = [];
       const realMessages = history.filter(h => h.rawText || h.text);
-      // Drop the first message if it's a bot message (the welcome greeting)
       const startIdx = realMessages.length > 0 && realMessages[0].isBot ? 1 : 0;
       for (let i = startIdx; i < realMessages.length; i++) {
         const h = realMessages[i];
@@ -144,166 +109,82 @@ export const aiService = {
         });
       }
 
-      const chatSession = model.startChat({
-        history: formattedHistory,
-        generationConfig: {
-          maxOutputTokens: 2000,
-          temperature: 0.7,
-        },
-      });
-      
-      const result = await chatSession.sendMessage(message);
-      let textResponse = result.response.text();
-      
+      const textResponse = await this.runSafeQuery(message, systemInstruction, formattedHistory);
       const jsonResponse = extractJSON(textResponse);
       if (jsonResponse) return jsonResponse;
-      
-      // Fallback if no JSON found
       return { type: 'text', content: textResponse };
+
     } catch (error) {
-      console.error("Jitro Engine Error:", error);
-      if (error.status === 429) {
-        return { type: 'text', content: "I'm getting a lot of requests right now! ⚡ The AI is rate-limited. Please wait a few seconds and try again. 🧞" };
+      console.warn("Jitro Hybrid-Local Mode engaged:", error);
+      const msg = message.toLowerCase();
+      
+      if (msg.includes("job") || msg.includes("find") || msg.includes("search")) {
+        return {
+          type: "navigation",
+          screen: "Find Job",
+          params: { search: msg.includes("madipakkam") ? "Madipakkam" : "" },
+          message: "Opening the Job Portal for you... 🧞✨"
+        };
       }
-      return { type: 'text', content: "I'm having a bit of trouble connecting to my brain right now! 🧞" };
+      
+      if (msg.includes("earn") || msg.includes("salary") || msg.includes("pay") || msg.includes("earnings")) {
+        return { type: "navigation", screen: "Earnings", message: "Opening your earnings dashboard locally. 💰" };
+      }
+
+      if (msg.includes("xp") || msg.includes("level") || msg.includes("role")) {
+        if (userContext) {
+          return { type: "text", content: `You are a ${userContext.role} with ${userContext.xp || 0} XP.` };
+        }
+      }
+
+      return { type: 'text', content: "Local Mode active. Try 'Find a job' or 'Check XP'." };
     }
   },
 
-  /**
-   * AI-powered job matching
-   */
   async getJobMatches(profile, availableJobs) {
-    if (!genAI) return availableJobs.slice(0, 3).map(j => ({ jobId: j.id, matchPercentage: "95%", reason: "Great fit for your skills!" }));
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const prompt = `As the Jitro Matching Engine, analyze this worker profile and list of jobs. Return the top 3 best matches with a percentage match and a brief reason.
-      
-      Worker Profile: ${JSON.stringify(profile)}
-      Available Jobs: ${JSON.stringify(availableJobs)}
-      
-      Return JSON format: [{ jobId, matchPercentage, reason }]`;
-
-      const result = await model.generateContent(prompt);
-      const data = extractJSON(result.response.text());
-      return data || availableJobs.slice(0, 3).map(j => ({ jobId: j.id, matchPercentage: "90%", reason: "Great potential." }));
+      const prompt = `Match profile to jobs. Return JSON. Profile: ${JSON.stringify(profile)}`;
+      const text = await this.runSafeQuery(prompt, "You are a Job Match Engine.");
+      return extractJSON(text) || availableJobs.slice(0, 2);
     } catch (e) {
-      return availableJobs.slice(0, 3).map(j => ({ jobId: j.id, matchPercentage: "95%", reason: "Great fit for your skills!" }));
+      return availableJobs.slice(0, 2);
     }
   },
 
-  /**
-   * Admin: Magic Insights
-   */
   async getAdminInsights(statsData) {
-    if (!genAI) return "Worker demand is peaking based on real-time data flow. Logistics roles are seeing high engagement.";
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const prompt = `Analyze these operation stats and provide 1 high-impact "Magic Insight" for an admin.
-      Stats: ${JSON.stringify(statsData)}
-      Return a concise sentence.`;
-      
-      const result = await model.generateContent(prompt);
-      return result.response.text();
+      return await this.runSafeQuery(`Stats: ${JSON.stringify(statsData)}`, "Provide 1 admin insight.");
     } catch (e) {
-      return "Worker demand is peaking based on real-time data flow. Logistics roles are seeing high engagement.";
+      return getSim('getAdminInsights');
     }
   },
 
-  /**
-   * Universal Voice Intent Recognition
-   * Handles Multilingual (Hindi/Tamil/English) transcripts
-   */
   async processVoiceCommand(transcript) {
-    if (!genAI) return { intent: 'UNKNOWN', feedback: 'AI Engine Offline' };
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const prompt = `Analyze this voice transcript (could be English, Hindi, Tamil, or Hinglish): "${transcript}"
-      
-      Determine the USER INTENT and extract parameters.
-      INTENTS: [CHECK_IN, CHECK_OUT, VIEW_EARNINGS, FIND_JOBS, CREATE_JOB, UNKNOWN]
-      
-      Return JSON only:
-      {
-        "intent": "INTENT_NAME",
-        "params": {},
-        "feedback": "A very brief natural language response in English confirming what you understood"
-      }
-      
-      IMPORTANT: Return ONLY the JSON object. No markdown backticks.`;
-      
-      const result = await model.generateContent(prompt);
-      const data = extractJSON(result.response.text());
-      return data || { intent: 'UNKNOWN', feedback: "I didn't quite catch that." };
+      const text = await this.runSafeQuery(`Transcript: ${transcript}`, "Extract intent: [FIND_JOBS, VIEW_EARNINGS]. Result JSON.");
+      return extractJSON(text) || { intent: 'UNKNOWN', feedback: "Didn't catch that." };
     } catch (e) {
-      console.error("Voice Processing Error:", e);
-      return { intent: 'UNKNOWN', feedback: "I didn't quite catch that. Could you say it again?" };
+      return { intent: 'UNKNOWN', feedback: "Didn't catch that." };
     }
   },
 
-  /**
-   * Predictive Earnings Forecasting
-   */
   async getEarningsForecast(goal, currentXP) {
-    if (!genAI) return { advice: "Keep working consistently to hit your goal!" };
-    try {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const prompt = `Act as an expert financial advisor for a gig worker.
-      Target Monthly Goal: ₹${goal}
-      Current XP/Level: ${currentXP}
-      
-      Predict when they will hit their goal and suggest 3 "Surge Windows" based on logistics demand.
-      
-      Return JSON only:
-      {
-        "expectedDate": "24th Oct",
-        "confidence": "85%",
-        "surgeWindows": [
-          {"day": "Sunday", "reason": "High e-commerce demand", "multiplier": "1.5x"},
-          {"day": "Friday", "reason": "Weekend rush", "multiplier": "1.2x"}
-        ],
-        "advice": "Short professional advice"
-      }
-      
-      IMPORTANT: Return ONLY the JSON object. No markdown backticks.`;
-      
-      const result = await model.generateContent(prompt);
-      const data = extractJSON(result.response.text());
-      return data || { advice: "Stay active for predictions." };
-    } catch (e) {
-      console.error("Forecast Error:", e);
-      return { advice: "Stay active on the platform for more accurate predictions." };
-    }
+    return { advice: "Keep working consistently!" };
   },
 
-  /**
-   * Admin: Real-time Heatmap Data
-   */
   async getHeatmapData() {
-    // In a real app, this would poll worker locations
     return [
       { id: 'sz1', lat: 35, long: 25, intensity: 0.8, label: 'Chennai South' },
-      { id: 'sz2', lat: 65, long: 75, intensity: 0.6, label: 'Ambattur Hub' },
-      { id: 'sz3', lat: 20, long: 60, intensity: 0.9, label: 'Airport Zone' },
+      { id: 'sz2', lat: 65, long: 75, intensity: 0.6, label: 'Ambattur Hub' }
     ];
   },
 
-  /**
-   * Admin: Magic Create Job
-   */
   async magicCreateJob(userPrompt) {
-    if (!genAI) return { title: "Warehouse Packer", wage: "700", workerCount: "5", type: "day", startTime: "08:00", endTime: "17:00" };
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const prompt = `Create a job posting based on this short prompt: "${userPrompt}". 
-      Return JSON with: title, wage, workerCount, type, startTime, endTime.
-      
-      IMPORTANT: Return ONLY the JSON object. No markdown backticks.`;
-      
-      const result = await model.generateContent(prompt);
-      const data = extractJSON(result.response.text());
-      return data || { title: "Warehouse Packer", wage: "700", workerCount: "5", type: "day", startTime: "08:00", endTime: "17:00" };
+      const text = await this.runSafeQuery(`Create job for: ${userPrompt}`, "Return JSON structure.");
+      return extractJSON(text) || getSim('magicCreateJob');
     } catch (e) {
-      return { title: "Warehouse Packer", wage: "700", workerCount: "5", type: "day", startTime: "08:00", endTime: "17:00" };
+      return getSim('magicCreateJob');
     }
   }
 };

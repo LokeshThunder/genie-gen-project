@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { FirestoreService } from '../services/firestoreService';
 
 const SURGE_ZONES = [
-  { id: 'sz1', lat: 35, long: 25, intensity: 0.8, label: 'Chennai South' },
-  { id: 'sz2', lat: 65, long: 75, intensity: 0.6, label: 'Ambattur Hub' },
-  { id: 'sz3', lat: 20, long: 60, intensity: 0.9, label: 'Airport Zone' },
+  { id: 'sz1', lat: 35, long: 25, intensity: 0.8, label: 'Chennai South', code: '60' },
+  { id: 'sz2', lat: 65, long: 75, intensity: 0.6, label: 'Delhi Hub', code: '11' },
+  { id: 'sz3', lat: 20, long: 60, intensity: 0.9, label: 'Mumbai Port', code: '40' },
 ];
 
 const HeatmapOverlay = ({ show }) => (
@@ -46,12 +47,96 @@ const HeatmapOverlay = ({ show }) => (
 const TrackingScreen = ({ setActive }) => {
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [isHeatmapMode, setIsHeatmapMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [mapScale, setMapScale] = useState(1);
+  const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
+  const [focusWorkerId, setFocusWorkerId] = useState(null);
+  
+  // Real-time Data State
+  const [applications, setApplications] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+
+  useEffect(() => {
+    const unsubApps = FirestoreService.streamApplications(setApplications);
+    const unsubAttendance = FirestoreService.streamAttendance(setAttendance);
+    return () => {
+      unsubApps();
+      unsubAttendance();
+    };
+  }, []);
 
   const workers = [
     { id: 'w1', name: 'Ravi Kumar', img: '🧔', lat: 40, long: 30, status: 'Active' },
     { id: 'w2', name: 'Sunil Singh', img: '👴', lat: 55, long: 45, status: 'Pending' },
     { id: 'w3', name: 'Priya Sharma', img: '👩', lat: 25, long: 65, status: 'Active' },
   ];
+
+  // Pincode-to-Map Centering Logic
+  useEffect(() => {
+    if (searchQuery.length === 6 && /^\d+$/.test(searchQuery)) {
+      const prefix = searchQuery.substring(0, 2);
+      const zone = SURGE_ZONES.find(z => z.code === prefix);
+      
+      if (zone) {
+        // Center on the zone (simulated by offset)
+        setMapOffset({ 
+          x: (50 - zone.long) * 2, 
+          y: (50 - zone.lat) * 2 
+        });
+        setMapScale(1.5);
+        setTimeout(() => {
+           alert(`📍 Operational focus shifted to ${zone.label} (${searchQuery})`);
+        }, 500);
+      }
+    } else if (searchQuery.length === 0) {
+      setMapScale(1);
+      setMapOffset({ x: 0, y: 0 });
+    }
+  }, [searchQuery]);
+
+  const handlePulseFocus = (workerId, lat, long) => {
+    setMapOffset({ 
+      x: (50 - long) * 2, 
+      y: (50 - lat) * 2 
+    });
+    setMapScale(1.8);
+    setFocusWorkerId(workerId);
+    
+    // Auto-clear focus animation after 3 units of time
+    setTimeout(() => setFocusWorkerId(null), 3000);
+  };
+
+  const allEvents = useMemo(() => {
+    const appEvents = applications.map(app => ({
+      id: `app_${app.id}`,
+      type: 'application',
+      timestamp: app.appliedAt?.toDate ? app.appliedAt.toDate() : new Date(app.appliedAt || Date.now()),
+      title: app.name || 'Worker',
+      subtitle: `Applied: ${app.jobTitle || 'Gig'}`,
+      icon: '📄',
+      status: app.status,
+      // Simulated coordinates for now since application docs don't have lat/long
+      lat: 20 + Math.random() * 60,
+      long: 20 + Math.random() * 60,
+      workerId: app.workerId
+    }));
+
+    const attendanceEvents = attendance.map(att => ({
+      id: `att_${att.id}`,
+      type: 'attendance',
+      timestamp: att.updatedAt?.toDate ? att.updatedAt.toDate() : new Date(att.updatedAt || Date.now()),
+      title: att.worker || 'Worker',
+      subtitle: att.concludedStatus === 'IN PROGRESS' ? `Current: ${att.role || 'On Site'}` : `Completed: ${att.role || 'Shift'}`,
+      icon: att.concludedStatus === 'IN PROGRESS' ? '🏃' : '✅',
+      status: att.concludedStatus || 'Active',
+      isActive: att.concludedStatus === 'IN PROGRESS',
+      lat: att.lat || (30 + Math.random() * 40),
+      long: att.long || (30 + Math.random() * 40),
+      workerId: att.workerId
+    }));
+
+    return [...appEvents, ...attendanceEvents].sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
+  }, [applications, attendance]);
 
   return (
     <div className="fade-in" style={{ height: '100%', background: '#fff', display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -90,24 +175,47 @@ const TrackingScreen = ({ setActive }) => {
       </div>
 
       {/* Simulated Map Background */}
-      <div style={{ 
-        flex: 1, 
-        background: isHeatmapMode ? '#111827' : '#e5e7eb', 
-        backgroundImage: isHeatmapMode 
-          ? 'radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)' 
-          : 'radial-gradient(#d1d5db 1px, transparent 1px)', 
-        backgroundSize: '30px 30px',
-        position: 'relative',
-        overflow: 'hidden',
-        transition: 'background 0.5s'
-      }}>
+      <motion.div 
+        animate={{ 
+          scale: mapScale,
+          x: mapOffset.x,
+          y: mapOffset.y
+        }}
+        transition={{ type: 'spring', damping: 20, stiffness: 100 }}
+        style={{ 
+          flex: 1, 
+          background: isHeatmapMode ? '#111827' : '#e5e7eb', 
+          backgroundImage: isHeatmapMode 
+            ? 'radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)' 
+            : 'radial-gradient(#d1d5db 1px, transparent 1px)', 
+          backgroundSize: '30px 30px',
+          position: 'relative',
+          overflow: 'hidden',
+          transition: 'background 0.5s'
+        }}>
         <HeatmapOverlay show={isHeatmapMode} />
 
-        {/* Worker Pins (Dimmed in heatmap mode) */}
+        {/* Dynamic Activity Points (Simulated from actual Pulse Data) */}
+        {!isHeatmapMode && allEvents.map((evt) => (
+           <motion.div 
+            key={evt.id + '_point'}
+            animate={{ scale: [1, 1.5, 1], opacity: [0.2, 0.4, 0.2] }}
+            transition={{ repeat: Infinity, duration: 2 }}
+            style={{ 
+              position: 'absolute', top: `${evt.lat}%`, left: `${evt.long}%`,
+              width: 40, height: 40, marginLeft: -20, marginTop: -20,
+              background: evt.type === 'application' ? 'radial-gradient(circle, #6366F1 0%, transparent 70%)' : 'radial-gradient(circle, #22C55E 0%, transparent 70%)',
+              borderRadius: '50%', zIndex: 6
+            }}
+           />
+        ))}
+
+        {/* Worker Pins */}
         {!isHeatmapMode && workers.map(w => (
           <div 
             key={w.id}
             onClick={() => setSelectedWorker(w)}
+            className={focusWorkerId === w.id ? "map-pin-pulse" : ""}
             style={{ 
               position: 'absolute', 
               top: `${w.lat}%`, 
@@ -204,25 +312,80 @@ const TrackingScreen = ({ setActive }) => {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+      </motion.div>
       
-      {/* Search/Filter bottom bar */}
-      {!selectedWorker && !isHeatmapMode && (
-        <div style={{ 
-          background: '#fff', 
-          padding: '16px 20px 40px', 
-          borderRadius: '24px 24px 0 0',
-          boxShadow: '0 -10px 25px rgba(0,0,0,0.05)',
-          zIndex: 15
-        }}>
-          <div style={{ background: '#F3F4F6', borderRadius: 12, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span>🔍</span>
-            <input 
-              placeholder="Search for a worker..." 
-              style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: 13 }}
-            />
+      {/* Pulse Operations Drawer */}
+      {!selectedWorker && (
+        <motion.div 
+          initial={{ y: '70%' }}
+          animate={{ y: isHeatmapMode ? '100%' : '0%' }}
+          style={{ 
+            background: '#fff', 
+            borderRadius: '24px 24px 0 0',
+            boxShadow: '0 -10px 25px rgba(0,0,0,0.08)',
+            zIndex: 15,
+            padding: '16px 20px 40px',
+            maxHeight: '40%',
+            overflowY: 'auto'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            <div style={{ width: 40, height: 4, background: '#E5E7EB', borderRadius: 2 }} />
           </div>
-        </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: '#302950' }}>Pulse Operations</div>
+            <div style={{ fontSize: 10, fontWeight: 800, color: '#22C55E' }}>LIVE FEED</div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {allEvents.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#888', fontSize: 11 }}>
+                Awaiting operational pulse...
+              </div>
+            ) : allEvents.map((event) => (
+              <motion.div 
+                key={event.id}
+                onClick={() => handlePulseFocus(event.workerId, event.lat, event.long)}
+                className="tap-effect"
+                style={{ 
+                  background: '#F9FAFB', 
+                  borderRadius: 16, 
+                  padding: '12px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 12,
+                  border: focusWorkerId === event.workerId ? '1.5px solid #6366F1' : '1.5px solid transparent',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ fontSize: 18 }}>{event.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800, fontSize: 12, color: '#111' }}>{event.title}</div>
+                  <div style={{ fontSize: 10, color: '#5E5680' }}>{event.subtitle}</div>
+                </div>
+                <div style={{ fontSize: 8, fontWeight: 900, color: '#BBB' }}>
+                  {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Persistent Search overlay if drawer is low */}
+      {!selectedWorker && !isHeatmapMode && (
+         <div style={{ position: 'absolute', bottom: 10, left: 15, right: 15, zIndex: 16 }}>
+             <div style={{ background: '#fff', borderRadius: 14, padding: '10px 14px', border: '1px solid #E5E7EB', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 14 }}>📍</span>
+              <input 
+                placeholder="Jump to Pincode..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: 12 }}
+              />
+            </div>
+         </div>
       )}
     </div>
   );

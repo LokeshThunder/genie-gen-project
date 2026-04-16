@@ -3,32 +3,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import NavBar from '../components/NavBar';
 import { JobService } from '../services/jobService';
 
-const FindGigScreen = ({ setActive, initialSearch = "" }) => {
+const FindGigScreen = ({ setActive, initialSearch = "", jobs = [], applications = [] }) => {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [appliedJobs, setAppliedJobs] = useState([]);
   const [activePanel, setActivePanel] = useState(null); // 'map', 'voice', 'settings'
   const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [isListening, setIsListening] = useState(false);
-  const [jobs, setJobs] = useState([]);
-
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [apps, availableJobs] = await Promise.all([
-          JobService.getMyApplications(),
-          JobService.getGigs()
-        ]);
-        setAppliedJobs(apps.map(a => a.jobId));
-        setJobs(availableJobs);
-      } catch (e) {
-        console.error("Error fetching data:", e);
-      }
-      setTimeout(() => setLoading(false), 800);
-    };
-    fetchData();
-  }, []);
+    setAppliedJobs((applications || []).map(a => a.jobId));
+    const timer = setTimeout(() => setLoading(false), 800);
+    return () => clearTimeout(timer);
+  }, [applications]);
 
   const handleVoiceSearch = () => {
     setIsListening(true);
@@ -157,8 +143,16 @@ const FindGigScreen = ({ setActive, initialSearch = "" }) => {
         ) : (
           loading ? renderSkeleton() : (
             <div className="full-height-scroll" style={{ padding: "6px 16px 120px", overflowY: 'auto', WebkitOverflowScrolling: 'touch', flex: 1, minHeight: 0 }}>
-                {jobs.filter(j => j.title.toLowerCase().includes(searchQuery.toLowerCase())).map((job) => {
-                  const isApplied = appliedJobs.includes(job.id);
+                {(jobs || []).filter(j => (j.title || '').toLowerCase().includes(searchQuery.toLowerCase())).map((job) => {
+                  const isApplied = (appliedJobs || []).includes(job.id);
+                  const displayPay = job.pay || `₹${job.wage}`;
+                  const displayPayFreq = job.payFreq || `PER ${job.pricingModel?.toUpperCase() || 'DAY'}`;
+                  const displayLoc = job.loc || job.locationName;
+                  const displayTime = job.time || `${job.startTime} - ${job.endTime}`;
+                  const displayShift = job.shift || (job.startTime > '17:00' ? 'NIGHT' : 'DAY');
+                  const displayColor = job.color || (job.category === 'Security' ? '#1E293B' : job.category === 'Delivery' ? '#F59E0B' : '#E11D48');
+                  const displayCompany = job.company || job.companyName || 'JobGenie Partner';
+
                   return (
                   <div key={job.id} style={{ 
                     background: "#fff", 
@@ -170,51 +164,51 @@ const FindGigScreen = ({ setActive, initialSearch = "" }) => {
                   }}>
                       {/* Badge Row */}
                       <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
-                        {job.perfectMatch && (
+                        {(job.perfectMatch || job.wage > 900) && (
                           <div style={{ background: "#ECFDF5", border: "1.5px solid #6EE7B7", borderRadius: 20, padding: "5px 12px", fontSize: 10, fontWeight: 900, color: "#059669", letterSpacing: 0.5 }}>✨ PERFECT MATCH!</div>
                         )}
                         {job.urgent && (
                           <div style={{ background: "#FFF7ED", border: "1.5px solid #FDBA74", borderRadius: 20, padding: "5px 12px", fontSize: 10, fontWeight: 900, color: "#C2410C", letterSpacing: 0.5 }}>⚡ URGENT</div>
                         )}
-                        <span style={{ color: "#22c55e", fontWeight: 900, fontSize: 13, marginLeft: "auto" }}>{job.match}</span>
+                        <span style={{ color: "#22c55e", fontWeight: 900, fontSize: 13, marginLeft: "auto" }}>{job.match || '95%'}</span>
                       </div>
     
                       {/* Info Row */}
                       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                        <div style={{ width: 44, height: 44, borderRadius: "50%", background: job.color, display: "flex", alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: "#fff", fontSize: 18, boxShadow: `0 4px 12px ${job.color}44` }}>
-                            {job.company.charAt(0)}
+                        <div style={{ width: 44, height: 44, borderRadius: "50%", background: displayColor, display: "flex", alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: "#fff", fontSize: 18, boxShadow: `0 4px 12px ${displayColor}44` }}>
+                            {displayCompany.charAt(0)}
                         </div>
                         <div>
                             <div style={{ fontWeight: 900, fontSize: 16, color: '#0F172A' }}>{job.title}</div>
-                            <div style={{ fontSize: 11, color: "#6366F1", fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5 }}>{job.company}</div>
+                            <div style={{ fontSize: 11, color: "#6366F1", fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5 }}>{displayCompany}</div>
                         </div>
                       </div>
     
                       {/* Location & Pay Details */}
                       <div style={{ display: "grid", gridTemplateColumns: '1.2fr 1.8fr', gap: 16, marginBottom: 16, background: '#F8FAFC', padding: '12px', borderRadius: 16 }}>
                         <div>
-                            <div style={{ fontSize: 18, fontWeight: 900, color: "#0F172A" }}>{job.pay}</div>
-                            <div style={{ fontSize: 9, color: "#64748B", fontWeight: 800, letterSpacing: 1 }}>{job.payFreq}</div>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: "#0F172A" }}>{displayPay}</div>
+                            <div style={{ fontSize: 9, color: "#64748B", fontWeight: 800, letterSpacing: 1 }}>{displayPayFreq}</div>
                         </div>
                         <div>
-                            <div style={{ fontWeight: 800, fontSize: 13, color: '#0F172A' }}>📍 {job.loc}</div>
-                            <div style={{ fontSize: 9, color: "#64748B", fontWeight: 800, letterSpacing: 1 }}>{job.distance}</div>
+                            <div style={{ fontWeight: 800, fontSize: 13, color: '#0F172A' }}>📍 {displayLoc}</div>
+                            <div style={{ fontSize: 9, color: "#64748B", fontWeight: 800, letterSpacing: 1 }}>{job.distance || 'Near you'}</div>
                         </div>
                       </div>
     
                       {/* Timing Row */}
                       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
                         <div style={{ background: "#F1F5F9", borderRadius: 12, padding: "8px 14px", fontSize: 11, fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            🕒 {job.time}
+                            🕒 {displayTime}
                         </div>
                         <div style={{ background: "#F1F5F9", borderRadius: 12, padding: "8px 14px", fontSize: 11, fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            {job.shift === "NIGHT" ? "🌙" : "☀️"} {job.shift}
+                            {displayShift === "NIGHT" ? "🌙" : "☀️"} {displayShift}
                         </div>
                       </div>
     
                       {/* Apply Button */}
                       <div 
-                        onClick={() => !isApplied && setActive('Job Details')}
+                        onClick={() => !isApplied && setActive('Job Details', job)}
                         className="tap-effect" 
                         style={{ 
                           background: isApplied ? "#E2E8F0" : "#1E1B4B", 

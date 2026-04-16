@@ -362,7 +362,15 @@ const Hyperspeed = ({ effectOptions = DEFAULT_EFFECT_OPTIONS }) => {
         });
         this.renderer.setSize(initW, initH, false);
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.composer = new EffectComposer(this.renderer);
+        
+        // Ensure context is available before creating composer
+        if (this.renderer.getContext()) {
+          this.composer = new EffectComposer(this.renderer);
+        } else {
+          console.error("Hyperspeed WebGL: Could not get context.");
+          this.composer = null;
+        }
+        
         container.append(this.renderer.domElement);
 
         this.camera = new THREE.PerspectiveCamera(options.fov, initW / initH, 0.1, 10000);
@@ -440,6 +448,8 @@ const Hyperspeed = ({ effectOptions = DEFAULT_EFFECT_OPTIONS }) => {
       }
 
       initPasses() {
+        if (!this.composer || !this.renderer) return;
+        
         this.renderPass = new RenderPass(this.scene, this.camera);
         this.bloomPass = new EffectPass(
           this.camera,
@@ -458,12 +468,18 @@ const Hyperspeed = ({ effectOptions = DEFAULT_EFFECT_OPTIONS }) => {
             areaImage: SMAAEffect.areaImageDataURL
           })
         );
-        this.renderPass.renderToScreen = false;
-        this.bloomPass.renderToScreen = false;
-        smaaPass.renderToScreen = true;
-        this.composer.addPass(this.renderPass);
-        this.composer.addPass(this.bloomPass);
-        this.composer.addPass(smaaPass);
+        
+        if (this.renderPass) this.renderPass.renderToScreen = false;
+        if (this.bloomPass) this.bloomPass.renderToScreen = false;
+        if (smaaPass) smaaPass.renderToScreen = true;
+        
+        try {
+          this.composer.addPass(this.renderPass);
+          this.composer.addPass(this.bloomPass);
+          this.composer.addPass(smaaPass);
+        } catch (e) {
+          console.error("Hyperspeed: Failed to add postprocessing passes:", e);
+        }
       }
 
       loadAssets() {
@@ -492,28 +508,35 @@ const Hyperspeed = ({ effectOptions = DEFAULT_EFFECT_OPTIONS }) => {
       }
 
       init() {
-        this.initPasses();
-        const options = this.options;
-        this.road.init();
-        this.leftCarLights.init();
+        try {
+          this.initPasses();
+          const options = this.options;
+          this.road.init();
+          this.leftCarLights.init();
 
-        this.leftCarLights.mesh.position.setX(-options.roadWidth / 2 - options.islandWidth / 2);
-        this.rightCarLights.init();
-        this.rightCarLights.mesh.position.setX(options.roadWidth / 2 + options.islandWidth / 2);
-        this.leftSticks.init();
-        this.leftSticks.mesh.position.setX(-(options.roadWidth + options.islandWidth / 2));
+          this.leftCarLights.mesh.position.setX(-options.roadWidth / 2 - options.islandWidth / 2);
+          this.rightCarLights.init();
+          this.rightCarLights.mesh.position.setX(options.roadWidth / 2 + options.islandWidth / 2);
+          this.leftSticks.init();
+          this.leftSticks.mesh.position.setX(-(options.roadWidth + options.islandWidth / 2));
 
-        this.container.addEventListener('mousedown', this.onMouseDown);
-        this.container.addEventListener('mouseup', this.onMouseUp);
-        this.container.addEventListener('mouseout', this.onMouseUp);
+          this.container.addEventListener('mousedown', this.onMouseDown);
+          this.container.addEventListener('mouseup', this.onMouseUp);
+          this.container.addEventListener('mouseout', this.onMouseUp);
 
-        this.container.addEventListener('touchstart', this.onTouchStart, { passive: true });
-        this.container.addEventListener('touchend', this.onTouchEnd, { passive: true });
-        this.container.addEventListener('touchcancel', this.onTouchEnd, { passive: true });
+          this.container.addEventListener('touchstart', this.onTouchStart, { passive: true });
+          this.container.addEventListener('touchend', this.onTouchEnd, { passive: true });
+          this.container.addEventListener('touchcancel', this.onTouchEnd, { passive: true });
 
-        this.container.addEventListener('contextmenu', this.onContextMenu);
-
-        this.tick();
+          this.container.addEventListener('contextmenu', this.onContextMenu);
+          this.onWindowResize();
+          this.tick();
+        } catch (err) {
+          console.error("Hyperspeed: Initialization failed. Falling back to background color.", err);
+          if (this.container) {
+            this.container.style.background = this.options.colors.background || "#0c021a";
+          }
+        }
       }
 
       onMouseDown(ev) {
