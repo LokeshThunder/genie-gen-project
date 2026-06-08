@@ -7,8 +7,8 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.8.0'
-        classpath 'com.google.gms:google-services:4.4.4'
+        classpath 'com.android.tools.build:gradle:9.2.1'
+        classpath 'com.google.gms:google-services:4.4.2'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
@@ -22,24 +22,33 @@ allprojects {
         google()
         mavenCentral()
     }
-}
-
-subprojects {
-    tasks.withType(JavaCompile).configureEach {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    // Force Java 17 toolchain for all subprojects that support it
     afterEvaluate { project ->
-        if (project.plugins.hasPlugin('java') || project.plugins.hasPlugin('com.android.application') || project.plugins.hasPlugin('com.android.library')) {
-            java {
-                toolchain {
-                    languageVersion = JavaLanguageVersion.of(17)
+        if (project.hasProperty('android')) {
+            project.android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_21
+                    targetCompatibility JavaVersion.VERSION_21
                 }
+            }
+        }
+        if (project.plugins.hasPlugin('org.jetbrains.kotlin.android') || 
+            project.plugins.hasPlugin('kotlin-android') || 
+            project.extensions.findByName('kotlin') != null) {
+            project.kotlin {
+                jvmToolchain(21)
             }
         }
     }
 }
+
+subprojects {
+    tasks.withType(JavaCompile).configureEach {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+
 
 task clean(type: Delete) {
     delete rootProject.buildDir

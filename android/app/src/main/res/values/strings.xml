@@ -1,7 +1,8 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">JobGenie</string>
-    <string name="title_activity_main">JobGenie</string>
-    <string name="package_name">com.jobgenie.worker</string>
-    <string name="custom_url_scheme">com.jobgenie.worker</string>
+    <string name="app_name">THE FUTURE OF WORK</string>
+    <string name="title_activity_main">THE FUTURE OF WORK</string>
+    <string name="package_name">com.jobgenie.job_genie</string>
+    <string name="custom_url_scheme">com.jobgenie.job_genie</string>
+    <string name="default_web_client_id">436878344532-s2d6f4029guj2b92cad2jrsieq8i2ar7.apps.googleusercontent.com</string>
 </resources>

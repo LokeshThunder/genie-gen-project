@@ -1,33 +1,27 @@
 {
   "project_info": {
-    "project_number": "572324646585",
-    "project_id": "job-genie-5e3ea",
-    "storage_bucket": "job-genie-5e3ea.firebasestorage.app"
+    "project_number": "436878344532",
+    "project_id": "job-genie-v3",
+    "storage_bucket": "job-genie-v3.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:572324646585:android:90dcfc81f7522c12529568",
+        "mobilesdk_app_id": "1:436878344532:android:bb6b59ecd9bbbee51cc8c1",
         "android_client_info": {
-          "package_name": "com.jobgenie.worker"
+          "package_name": "com.jobgenie.job_genie"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "572324646585-rj0n3cpe33p635oebp3q9rv6u1bnd4s8.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
       "api_key": [
         {
-          "current_key": "AIzaSyAIi-iR5MhrnfMnMlX4soT9KEaZ8wSga6s"
+          "current_key": "AIzaSyAbN3OrwI_-Y0Z4RgHZwcy6BtzKjXiz10o"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "572324646585-rj0n3cpe33p635oebp3q9rv6u1bnd4s8.apps.googleusercontent.com",
+              "client_id": "436878344532-s2d6f4029guj2b92cad2jrsieq8i2ar7.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

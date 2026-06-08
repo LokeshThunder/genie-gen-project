@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.jobgenie.worker"
+    namespace = "com.jobgenie.job_genie"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.jobgenie.worker"
+        applicationId "com.jobgenie.job_genie"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 22
@@ -17,6 +17,12 @@ android {
         }
     }
     signingConfigs {
+        debug {
+            storeFile file('genie-debug.keystore')
+            storePassword 'jobgenie'
+            keyAlias 'genie'
+            keyPassword 'jobgenie'
+        }
         release {
             if (project.hasProperty('RELEASE_STORE_FILE')) {
                 storeFile file(RELEASE_STORE_FILE)
@@ -28,10 +34,20 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+            debuggable true
+        }
         release {
             signingConfig signingConfigs.release
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // R8 Obfuscation & Shrinking
+            // This makes reverse engineering the APK significantly harder by
+            // renaming classes, methods and fields to meaningless short names,
+            // and stripping unused code and resources from the binary.
+            minifyEnabled true
+            shrinkResources true
+            debuggable false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }
@@ -68,7 +84,7 @@ try {
 // Override Capacitor's Java 21 defaults
 android {
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
 }

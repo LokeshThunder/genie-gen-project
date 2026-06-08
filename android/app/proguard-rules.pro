@@ -1,21 +1,46 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ─── Job Genie — ProGuard / R8 Configuration ───────────────────────────────
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# ─── CAPACITOR ───────────────────────────────────────────────────────────────
+# Capacitor bridges between native code and the WebView. These classes are
+# called via reflection and must not be renamed or removed by R8.
+-keep class com.getcapacitor.** { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+-keepclassmembers class * extends com.getcapacitor.Plugin {
+    @com.getcapacitor.annotation.PermissionCallback <methods>;
+    @com.getcapacitor.annotation.ActivityCallback <methods>;
+    @com.getcapacitor.annotation.CapacitorPlugin *;
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# ─── FIREBASE ────────────────────────────────────────────────────────────────
+# Firebase SDK uses reflection internally; preserve all Firebase classes.
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.** { *; }
+-dontwarn com.google.firebase.**
+-dontwarn com.google.android.gms.**
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ─── GOOGLE SIGN IN ──────────────────────────────────────────────────────────
+-keep class com.google.android.gms.auth.** { *; }
+
+# ─── WEBVIEW (JavaScript Interface) ──────────────────────────────────────────
+# Protect any classes annotated with @JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# ─── ANDROID COMPONENTS ──────────────────────────────────────────────────────
+# Keep standard Android entry points (Activities, Services, Receivers, Providers)
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
+-keep public class * extends android.content.ContentProvider
+
+# ─── SUPPRESS BENIGN WARNINGS ────────────────────────────────────────────────
+-dontwarn org.bouncycastle.**
+-dontwarn org.conscrypt.**
+-dontwarn org.openjsse.**
+
+# ─── DEBUGGING (Disabled for security in release) ────────────────────────────
+# Do NOT uncomment these in production — they embed original source file names
+# and line numbers into the APK, making reverse engineering easier.
+# -keepattributes SourceFile,LineNumberTable
+# -renamesourcefileattribute SourceFile

@@ -1,0 +1,270 @@
+name: Build, Test & Deploy
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '18'
+  CACHE_DEPENDENCY_PATH: '**/package-lock.json'
+
+jobs:
+  # ─── CODE QUALITY CHECKS ──────────────────────────────────────────────────
+  lint:
+    name: Lint & Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.CACHE_DEPENDENCY_PATH }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+        continue-on-error: true  # Don't fail build on lint warnings
+
+  # ─── UNIT TESTS ───────────────────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.CACHE_DEPENDENCY_PATH }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:run
+
+      - name: Generate coverage report
+        if: always()
+        run: npm run test:coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        if: always()
+        with:
+          files: ./coverage/coverage-final.json
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+      - name: Archive coverage reports
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report-${{ github.run_number }}
+          path: coverage/
+
+      - name: Comment PR with coverage
+        if: github.event_name == 'pull_request' && always()
+        uses: romeovs/lcov-reporter-action@v0.3.1
+        with:
+          lcov-file: ./coverage/lcov.info
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── BUILD PRODUCTION ─────────────────────────────────────────────────────
+  build:
+    name: Build Production
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.CACHE_DEPENDENCY_PATH }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production
+        run: npm run build:prod
+        env:
+          # Set production env vars from secrets
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_USE_MOCK: 'false'
+          VITE_E2E_MODE: 'false'
+
+      - name: Analyze bundle size
+        run: npm run build:prod -- --outDir dist-analyze 2>&1 | tee build-output.txt
+
+      - name: Check bundle warnings
+        run: |
+          if grep -q "is larger than" build-output.txt; then
+            echo "⚠️ Warning: Some chunks exceed 500KB size threshold"
+            grep "is larger than" build-output.txt
+          fi
+
+      - name: Archive build
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-${{ github.run_number }}
+          path: dist/
+          retention-days: 5
+
+      - name: Comment on PR with build size
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const buildOutput = fs.readFileSync('build-output.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '📦 Build Output:\n```\n' + buildOutput.slice(-1000) + '\n```'
+            });
+
+  # ─── SECURITY SCAN ────────────────────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      - name: Check for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug
+
+  # ─── E2E TESTS (Optional - only on main branch) ───────────────────────────
+  e2e:
+    name: E2E Tests (Cypress)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start dev server
+        run: npm run dev &
+        env:
+          VITE_USE_MOCK: 'true'  # Use mock for E2E tests
+
+      - name: Wait for server
+        run: npx wait-on http://localhost:5173 --timeout 30000
+
+      - name: Run E2E tests
+        run: npm run e2e:run
+        continue-on-error: true
+
+      - name: Upload E2E videos
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: cypress-videos-${{ github.run_number }}
+          path: cypress/videos/
+          retention-days: 7
+
+      - name: Upload E2E screenshots
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: cypress-screenshots-${{ github.run_number }}
+          path: cypress/screenshots/
+          retention-days: 7
+
+  # ─── DEPLOY TO FIREBASE (Main branch only) ────────────────────────────────
+  deploy:
+    name: Deploy to Firebase
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [build, test, security]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production
+        run: npm run build:prod
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_USE_MOCK: 'false'
+          VITE_E2E_MODE: 'false'
+
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JOB_GENIE }}
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+          channelId: live
+          cleanUrls: true
+
+      - name: Post deployment status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}' === 'success' ? '✅ Deployment successful' : '❌ Deployment failed';
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Deployment ${status} - ${new Date().toLocaleDateString()}`,
+              body: `**Status**: ${status}\n**Commit**: ${context.sha}\n**Build**: ${context.runId}`
+            });
